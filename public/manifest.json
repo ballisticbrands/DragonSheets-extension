@@ -48,6 +48,6 @@
     "matches": ["https://go.getdragonsheets.com/*"]
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://*.getdragonsheets.com https://api.getdragonbot.com https://www.googleapis.com"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://*.getdragonsheets.com https://api.getdragonbot.com https://www.googleapis.com https://www.google-analytics.com"
   }
 }

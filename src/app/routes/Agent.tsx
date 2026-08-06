@@ -12,6 +12,7 @@
  *     Create. No autonomous writes into someone's spreadsheet.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { trackAgentPromptSent } from "../../analytics";
 import { getBackend } from "../../backend";
 import type { AgentMessage, AgentProposal, ConnectionStatus } from "../../backend/types";
 import { Badge, Card } from "../../ui/Card";
@@ -42,6 +43,8 @@ export function Agent({ ctx }: { ctx: AppContext }) {
   const [applying, setApplying] = useState<string | null>(null);
   const cancelled = useRef(false);
   const tokenRef = useRef<string | null>(null);
+  /** Prompts sent in THIS mount — reported as `turn` on agent_prompt_sent. */
+  const promptCount = useRef(0);
 
   useEffect(() => {
     const backend = getBackend();
@@ -72,6 +75,10 @@ export function Agent({ ctx }: { ctx: AppContext }) {
         ...prev,
         { id: `local_${Date.now()}`, role: "user", content: text, at: Date.now() },
       ]);
+      // Only the LENGTH and the turn index. Prompt text routinely contains
+      // ASINs, brand names and revenue figures — none of which may go to GA4.
+      promptCount.current += 1;
+      void trackAgentPromptSent({ promptLength: text.length, turn: promptCount.current });
       try {
         const backend = getBackend();
         let result = await backend.sendAgentMessage(text);

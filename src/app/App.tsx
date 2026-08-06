@@ -4,6 +4,7 @@
  * affordance hopted lacks), toggled by the toolbar launcher.
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { reconcileConnectionActivations, trackSidebarOpened } from "../analytics";
 import { getBackend } from "../backend";
 import type { Session } from "../backend/types";
 import { sidebarStore } from "../content/sidebar-store";
@@ -73,6 +74,32 @@ export function SidebarApp({ selectors }: { selectors: SelectorMap }) {
       if (readRouteFromUrl()) sidebarStore.setOpen(true);
     })();
   }, [refreshSession]);
+
+  // Analytics: one `sidebar_opened` per open (not per render), and the
+  // activation reconciliation. Activations MUST come from connection state
+  // here rather than from the OAuth popup's postMessage — a blocked or
+  // early-closed popup would otherwise lose the conversion silently while the
+  // connection succeeded server-side. See src/analytics/events.ts.
+  const openTracked = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      openTracked.current = false;
+      return;
+    }
+    if (!booted || openTracked.current) return;
+    openTracked.current = true;
+    void trackSidebarOpened({ source: readRouteFromUrl() ? "deep_link" : "launcher" });
+  }, [open, booted]);
+
+  // Reconcile per (open × signed-in user), so a user who signs in with the
+  // panel already open still gets reconciled without waiting for a reopen.
+  const reconciledFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open || !session) return;
+    if (reconciledFor.current === session.userId) return;
+    reconciledFor.current = session.userId;
+    void reconcileConnectionActivations();
+  }, [open, session]);
 
   // Back/forward inside the extension UI.
   useEffect(() => {

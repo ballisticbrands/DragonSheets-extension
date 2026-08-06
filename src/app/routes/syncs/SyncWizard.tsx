@@ -9,6 +9,7 @@
  * on a given step. All three are deep-linkable.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { trackSyncCreated } from "../../../analytics";
 import { getBackend } from "../../../backend";
 import type { AmazonAccount, ReportCatalogEntry, Sync, SyncRun, Usage } from "../../../backend/types";
 import { formatNumber } from "../../../lib/format";
@@ -168,6 +169,16 @@ export function SyncWizard({ ctx, params }: { ctx: AppContext; params: Record<st
       const backend = getBackend();
       const sync = await backend.createSync(toSyncConfig(state, reports, accounts));
       setCreated(sync);
+      // Shape only — schedule, counts, and where the config came from. No
+      // report ids, column names, sheet names or filter values: those describe
+      // the customer's business, not our funnel.
+      void trackSyncCreated({
+        schedule: sync.schedule,
+        reportCount: sync.sources.length,
+        columnCount: sync.columns.length,
+        fromTemplate: Boolean(templateId),
+        fromAgent: Boolean(proposalId),
+      });
       const firstRun = await backend.runSync(sync.id);
       setRun(firstRun);
       setPhase("done");
@@ -177,7 +188,7 @@ export function SyncWizard({ ctx, params }: { ctx: AppContext; params: Record<st
     } finally {
       clearInterval(timer);
     }
-  }, [state, reports, accounts]);
+  }, [state, reports, accounts, templateId, proposalId]);
 
   if (loading) {
     return (

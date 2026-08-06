@@ -10,9 +10,11 @@
  *  3. The popup posts {type: "dragonbot-oauth-result", provider, status}
  *     back to window.opener and closes itself.
  *  4. We reconcile from *connection status*, not from the popup message
- *     alone (DRAGONSHEETS_PLAN Phase 5 principle).
+ *     alone (DRAGONSHEETS_PLAN Phase 5 principle). The postMessage triggers a
+ *     reconcile; it never fires an analytics event itself.
  */
 import { useCallback, useEffect, useState } from "react";
+import { reconcileConnectionActivations } from "../../analytics";
 import { getBackend } from "../../backend";
 import type { ConnectProvider, ConnectionStatus } from "../../backend/types";
 import { Badge, Card } from "../../ui/Card";
@@ -72,6 +74,16 @@ export function ConnectAmazon({ ctx }: { ctx: AppContext }) {
         }
         setPending(null);
         await refresh();
+        // Reconcile straight away so the conversion is not held hostage until
+        // the next sidebar mount. It still reads connection STATE and dedupes
+        // per connection id — this is a latency optimisation, not a second
+        // firing path.
+        void reconcileConnectionActivations();
+        // 🚫 Deliberately NO direct event fire from this postMessage. A popup
+        // that is blocked, closed a second early, or navigated away from still
+        // leaves a real server-side connection, and a postMessage-only path
+        // drops that conversion silently — it cost DragonReply its first real
+        // connection. See src/analytics/events.ts.
       })();
     };
     window.addEventListener("message", onMessage);

@@ -4,6 +4,7 @@
  * §5.3): copy-to-clipboard, auto-open Google's Share dialog, check access.
  */
 import { useEffect, useState } from "react";
+import { trackSheetShared } from "../../analytics";
 import { getBackend } from "../../backend";
 import { logDiag } from "../../lib/diagnostics";
 import { Button } from "../../ui/Button";
@@ -42,8 +43,14 @@ export function ShareSpreadsheet({ ctx }: { ctx: AppContext }) {
     setDenied(false);
     try {
       const res = await getBackend().checkSheetAccess(ctx.spreadsheetId);
-      if (res.granted) ctx.navigate("onboarding-completed");
-      else setDenied(true);
+      if (res.granted) {
+        // Fires on the CONFIRMED grant, not on the "Check access" click —
+        // this is the onboarding step that actually converts, and counting
+        // failed checks would flatter it. No spreadsheet id is sent: a
+        // document identifier is user content, not a metric.
+        void trackSheetShared();
+        ctx.navigate("onboarding-completed");
+      } else setDenied(true);
     } catch {
       setDenied(true);
     } finally {

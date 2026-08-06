@@ -1,5 +1,6 @@
 /** Onboarding step 1 — value prop + Sign in with Google (route: welcome). */
 import { useState } from "react";
+import { trackSignUp } from "../../analytics";
 import { signInWithGoogle } from "../../auth";
 import { getBackend } from "../../backend";
 import { Button } from "../../ui/Button";
@@ -14,7 +15,14 @@ export function Welcome({ ctx }: { ctx: AppContext }) {
     setBusy(true);
     setError(null);
     try {
-      await signInWithGoogle();
+      const session = await signInWithGoogle();
+      // `sign_up` fires ONCE, ever — trackSignUp dedupes in storage. This is
+      // this product's stand-in for frontend-shared's rule that
+      // identifyUserAcrossPlatforms() is the sole caller. It also pins
+      // `user_id` for every subsequent event. Only the opaque id goes to GA4:
+      // no email, no name (Clarity, which normally takes those, cannot run in
+      // an extension).
+      void trackSignUp({ id: session.userId });
       await ctx.refreshSession();
       // If this spreadsheet already granted access (e.g. re-install), skip
       // straight past the share step.
