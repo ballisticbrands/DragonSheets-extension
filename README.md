@@ -98,6 +98,10 @@ src/app/                      sidebar React app
                               templates (gallery); settings (5 tabs);
                               syncs/ (list, 6-step wizard, per-sync detail +
                               calculated-column editor)
+src/analytics/                GA4 via the Measurement Protocol (gtag.js can't
+                              run under MV3): client-id stitching, rolling
+                              session, PII scrub, capped offline queue, the
+                              typed event API — see docs/ANALYTICS.md
 src/backend/                  BackendClient interface + MockBackend
 src/auth/                     mock + dormant real Google sign-in
 src/background/               module service worker: installed/uninstalled
@@ -147,21 +151,63 @@ there is no `public/` for the site). DNS: add a `go` CNAME →
 `ballisticbrands.github.io.` at Namecheap (TODO(user-task)).
 
 `/installed/` contains the **attribution bridge**: it reads the
-`dragonbot_attribution` cookie (domain `.getdragonsheets.com`, set by the LP)
-plus localStorage and hands the blob to the extension via
-`chrome.runtime.sendMessage(EXTENSION_ID, {type: "ds-attribution", ...})`
+`dragonbot_attribution` cookie (domain `.getdragonsheets.com`, set by the LP),
+`localStorage["dragonbot_attribution_v1"]`, and the GA4 `client_id` parsed out
+of the `_ga` cookie, then hands the lot to the extension via
+`chrome.runtime.sendMessage(EXTENSION_ID, {type: "ds-attribution", payload})`
 (externally_connectable). The extension ID constant is empty until the first
-CWS publish (TODO(user-task)).
+CWS publish (TODO(user-task)) — until then the bridge is dormant but still
+logs, and `?debug=1` prints the payload it would have sent. Mechanism and
+diagram: [`docs/ANALYTICS.md`](docs/ANALYTICS.md) §3.
+
+All four `site/` pages carry the standard tracking stack; `/installed/` also
+fires `extension_installed` (web-side, so Meta sees it — the extension itself
+can only reach GA4).
+
+## Analytics
+
+Full spec — event schema, bridge diagram, DebugView runbook:
+**[`docs/ANALYTICS.md`](docs/ANALYTICS.md)**. The short version:
+
+- MV3 forbids remote code, so **gtag.js cannot run inside the extension**.
+  In-extension events reach GA4 through the **Measurement Protocol**, POSTed
+  from the service worker (`src/analytics/`). The `site/` pages are ordinary
+  web pages and carry the normal gtag + Clarity + Meta stack.
+- The Chrome Web Store strips every query param, referrer and cookie, so
+  `site/installed/index.html` is an **attribution bridge**: it reads the LP's
+  `dragonbot_attribution` cookie, `dragonbot_attribution_v1` localStorage and
+  the GA4 `client_id` out of the `_ga` cookie, then hands them to the
+  extension over `externally_connectable`. The extension adopts that
+  `client_id` — which is what makes an ad click and an in-extension
+  conversion one GA4 user instead of two.
+- Event names are **not product-prefixed**: `sidebar_opened`, `sign_up`,
+  `sheet_shared`, `connect_amazon` (+ `_seller` / `_ads`), `sync_created`,
+  `agent_prompt_sent`. **`connect_amazon` is THE Google Ads conversion**,
+  counted ONE_PER_CLICK; the specific two are segmentation only and are never
+  summed with it.
+- Activations fire from **connection state** on sidebar mount, never from the
+  OAuth popup's postMessage.
+
+```bash
+npm run test:analytics   # headless harness: payload shape, PII scrub, dedupe,
+                         # queue order + cap, client_id precedence
+```
 
 ## Tracking IDs
 
-| Property | ID | Status |
-|---|---|---|
-| GA4 measurement ID | — | TODO(user-task) — DRAGONSHEETS_PLAN Phase 2 |
-| GA4 MP api_secret (extension) | — | TODO(user-task) — Phase 5 |
-| Clarity project (LP/site only) | — | TODO(user-task) — Phase 2 |
-| Meta dataset | — | TODO(user-task) — Phase 2 |
-| CWS extension ID | — | TODO(user-task) — Phase 6 (also needed in `site/installed/index.html` and `src/auth/config.ts` redirect URI) |
+| Property | ID | Where it goes | Status |
+|---|---|---|---|
+| GA4 measurement ID | — | `src/analytics/config.ts` (`GA4_MEASUREMENT_ID`) **and** `G-TODOTODO00` in `site/**/index.html` | TODO(user-task) — `DRAGONSHEETS_USER_TASKS.md` **Task 4a** |
+| GA4 MP `api_secret` (extension) | — | `src/analytics/config.ts` (`GA4_API_SECRET`) | TODO(user-task) — **Task 4a**, step 6 |
+| Clarity project (web surfaces only) | — | `TODO_CLARITY_ID` in `site/**/index.html` | TODO(user-task) — **Task 4b** |
+| Meta dataset (web surfaces only) | — | `TODO_META_PIXEL_ID` in `site/**/index.html` — head snippet **and** the `<noscript>` img | TODO(user-task) — **Task 4c** |
+| CWS extension ID | — | `DRAGONSHEETS_EXTENSION_ID` in `site/installed/index.html`; also the `src/auth/config.ts` redirect URI | TODO(user-task) — Phase 6 (CWS mints it at first publish) |
+
+The `site/` pages deliberately use the **same placeholder strings as the
+landing page** (`G-TODOTODO00`, `TODO_CLARITY_ID`, `TODO_META_PIXEL_ID`), so a
+single find-and-replace across `DragonSheets-LP` and this repo's `site/`
+covers every surface at once. Each must be a **new per-product**
+property/project/dataset — never another Dragon product's IDs.
 
 ## CI
 
