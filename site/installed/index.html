@@ -7,13 +7,59 @@
     <meta name="description" content="DragonSheets is installed — open a Google Sheet to get started." />
     <link rel="stylesheet" href="/assets/site.css" />
     <meta name="robots" content="noindex" />
-    <!-- TODO(user-task): GA4 gtag snippet here (measurement ID TBD — DRAGONSHEETS_PLAN Phase 2).
-         Use the dataLayer.push(arguments) shim per the funnel skill, and fire
-         an `extension_installed` event on load. -->
-    <!-- TODO(user-task): Microsoft Clarity snippet (project ID TBD). -->
-    <!-- TODO(user-task): Meta pixel snippet + <noscript> (dataset ID TBD). -->
+
+    <!-- TODO_TRACKING: replace placeholder IDs — see DRAGONSHEETS_USER_TASKS.md
+         G-TODOTODO00       → the DragonSheets GA4 measurement ID (Task 4a)
+         TODO_CLARITY_ID    → the DragonSheets Clarity project ID (Task 4b)
+         TODO_META_PIXEL_ID → the DragonSheets Meta pixel/dataset ID (Task 4c;
+                              also in the <noscript> img in <body> below)
+         These are the SAME placeholder strings the landing page uses, so one
+         find-and-replace across DragonSheets-LP + this repo's site/ covers
+         every surface. Each must be a NEW per-product property/project/
+         dataset — never another Dragon product's IDs. -->
+
+    <!-- Microsoft Clarity. Web-only: Clarity cannot run inside the extension
+         (MV3 bans the remote script), so in-extension behaviour is invisible
+         to it by design. -->
+    <script type="text/javascript">
+      (function(c,l,a,r,i,t,y){
+        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+      })(window, document, "clarity", "script", "TODO_CLARITY_ID");
+    </script>
+    <!-- Google Analytics. ⚠️ The shim MUST push the `arguments` object —
+         dataLayer.push(args) with a rest-param array is silently ignored by
+         gtag.js and sends ZERO hits, not even page_view. That exact bug
+         zeroed a sibling product's GA4 for ten days. -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-TODOTODO00"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-TODOTODO00');
+    </script>
+    <!-- Meta Pixel. Own dataset for the DragonSheets surfaces. -->
+    <script>
+      !function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t,s)}(window, document,'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+      fbq('init', 'TODO_META_PIXEL_ID');
+      fbq('track', 'PageView');
+    </script>
   </head>
   <body>
+    <!-- Meta Pixel no-JS fallback. Meta's copy-paste snippet puts this in
+         <head>, but <noscript> there may only hold <link>/<style>/<meta> —
+         an <img> is a parse error. It belongs in <body>. -->
+    <noscript><img height="1" width="1" style="display:none" alt=""
+      src="https://www.facebook.com/tr?id=TODO_META_PIXEL_ID&ev=PageView&noscript=1" /></noscript>
+
     <div class="wrap">
       <a class="logo" href="/"><span class="mark">DS</span><span class="word">DragonSheets</span></a>
       <h1>Installed. One more step.</h1>
@@ -41,62 +87,239 @@
       </footer>
     </div>
 
-    <!-- Attribution bridge (DRAGONSHEETS_PLAN Phase 5.2).
-         This page shares eTLD+1 with getdragonsheets.com, so the LP's
-         first-party `dragonbot_attribution` cookie (domain .getdragonsheets.com)
-         is readable here. We hand the blob to the extension via
-         externally_connectable messaging — the only channel that survives the
-         Chrome Web Store attribution black hole. -->
+    <!-- ══════════════════════════════════════════════════════════════════
+         `extension_installed` — the funnel step between the ad click and the
+         first in-extension event. Fired here rather than from the extension
+         because this is an ordinary web page: gtag, Clarity AND Meta can all
+         see it, whereas the extension can only reach GA4 (via the Measurement
+         Protocol). It is the ONLY install signal Meta will ever get.
+         ══════════════════════════════════════════════════════════════════ -->
     <script>
       (function () {
-        // TODO(user-task): set to the real extension ID after the first Chrome
-        // Web Store publish (the ID is minted by CWS). Empty = bridge dormant.
+        try { gtag('event', 'extension_installed'); } catch (e) {}
+        try { window.clarity && clarity('event', 'extension_installed'); } catch (e) {}
+        // trackCustom, not track: `extension_installed` is not one of Meta's
+        // standard event names, and passing a custom name to track() files it
+        // as an unrecognised standard event.
+        try { window.fbq && fbq('trackCustom', 'extension_installed'); } catch (e) {}
+      })();
+    </script>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         THE ATTRIBUTION BRIDGE (DRAGONSHEETS_PLAN.md Phase 5.2)
+         ══════════════════════════════════════════════════════════════════
+
+         The problem: the Chrome Web Store is an attribution black hole. A
+         visitor clicks a Google ad → lands on getdragonsheets.com (gclid in
+         the URL, captured into the `dragonbot_attribution` cookie) → clicks
+         "Add to Chrome" → and the Web Store hands the freshly installed
+         extension NO query params, NO referrer and NO cookies. The extension
+         starts life as an anonymous new GA4 user, and the `connect_amazon`
+         conversion it later reports can never be joined to the ad click that
+         paid for it.
+
+         The fix: this page. It runs on go.getdragonsheets.com, which shares
+         eTLD+1 with the landing page, so it can read BOTH first-party
+         artefacts the LP left behind —
+             · `dragonbot_attribution` cookie   (domain .getdragonsheets.com)
+             · localStorage `dragonbot_attribution_v1`
+         — plus the GA4 `client_id` out of the `_ga` cookie, and hand all
+         three to the extension via `chrome.runtime.sendMessage(EXT_ID, …)`.
+         `externally_connectable` in the manifest restricts that channel to
+         this origin, so no other site can write our attribution.
+
+         The extension adopts that client_id as its own (see
+         src/analytics/client-id.ts), and from GA4's point of view the ad
+         click and the in-extension conversion become one continuous user.
+
+         Debug it: append `?debug=1` to this URL. Nothing is sent; the payload
+         that WOULD be sent is printed instead.
+         ══════════════════════════════════════════════════════════════════ -->
+    <script>
+      (function () {
+        // ─── TODO(user-task) ────────────────────────────────────────────
+        // Set to the real extension ID after the first Chrome Web Store
+        // publish (CWS mints the ID; it cannot be known before then). A
+        // 32-character lowercase a–p string, e.g.
+        // "abcdefghijklmnopabcdefghijklmnop".
+        // Empty ⇒ the bridge is DORMANT: it still logs and still honours
+        // ?debug=1, it just never sends. It must never throw when dormant —
+        // this is the post-install landing page and has to render regardless.
         var DRAGONSHEETS_EXTENSION_ID = "";
+        // ────────────────────────────────────────────────────────────────
+
+        var DEBUG = /(?:^|[?&])debug=1(?:&|$)/.test(location.search);
+        var ATTRIBUTION_COOKIE = "dragonbot_attribution";
+        var ATTRIBUTION_LS_KEY = "dragonbot_attribution_v1";
+        var UTM_KEYS = ["utm_source","utm_medium","utm_campaign","utm_content","utm_term"];
+        var CLICK_IDS = ["gclid","fbclid","msclkid"];
+        var TEXT_KEYS = ["referrer","landing_page","captured_at"];
+
+        function log(event, data) {
+          try {
+            console.info("[dragonsheets-bridge] " + JSON.stringify(
+              Object.assign({ event: event }, data || {})
+            ));
+          } catch (e) {}
+        }
 
         function readCookie(name) {
-          var m = document.cookie.match(
-            new RegExp("(?:^|;\\s*)" + name + "=([^;]*)")
-          );
-          return m ? m[1] : null;
-        }
-
-        var payload = null;
-        try {
-          var raw =
-            readCookie("dragonbot_attribution") ||
-            window.localStorage.getItem("dragonbot_attribution");
-          if (raw) {
-            try {
-              payload = JSON.parse(decodeURIComponent(raw));
-            } catch (e) {
-              payload = { raw: raw };
-            }
+          try {
+            var m = document.cookie.match(
+              new RegExp("(?:^|;\\s*)" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "=([^;]*)")
+            );
+            return m ? decodeURIComponent(m[1]) : null;
+          } catch (e) {
+            return null;
           }
-        } catch (e) {
-          /* cookie/localStorage blocked — nothing to bridge */
         }
 
-        try {
-          if (
-            payload &&
-            DRAGONSHEETS_EXTENSION_ID &&
-            window.chrome &&
-            chrome.runtime &&
-            chrome.runtime.sendMessage
-          ) {
+        /**
+         * The LP writes the cookie as a URL-encoded QUERY STRING
+         * (`utm_source=google&gclid=…`), NOT as JSON — see
+         * frontend-shared/src/attribution.ts `readCookieAttribution()`.
+         * Parsing it as JSON is the obvious mistake and yields nothing at all.
+         */
+        function parseCookieAttribution(raw) {
+          var out = {};
+          if (!raw) return out;
+          try {
+            var params = new URLSearchParams(raw);
+            UTM_KEYS.concat(CLICK_IDS).forEach(function (k) {
+              var v = params.get(k);
+              if (v) out[k] = String(v).slice(0, 256);
+            });
+            TEXT_KEYS.forEach(function (k) {
+              var v = params.get(k);
+              if (v) out[k] = String(v).slice(0, 2048);
+            });
+          } catch (e) {}
+          return out;
+        }
+
+        /** localStorage holds the same blob as JSON, under the _v1 key. */
+        function parseLocalAttribution() {
+          try {
+            var raw = window.localStorage.getItem(ATTRIBUTION_LS_KEY);
+            if (!raw) return {};
+            var parsed = JSON.parse(raw);
+            return parsed && typeof parsed === "object" ? parsed : {};
+          } catch (e) {
+            return {}; // storage blocked, or a malformed blob
+          }
+        }
+
+        /**
+         * Extract the GA4 client_id from the `_ga` cookie.
+         *
+         * Format: `GA1.<domainComponents>.<random>.<timestamp>`
+         *   GA1                  — cookie format version
+         *   <domainComponents>   — how many hostname parts GA stripped. It is
+         *                          1 here but 2 or 3 on other setups, so it
+         *                          must never be matched positionally.
+         *   <random>.<timestamp> — THIS PAIR IS THE client_id
+         *
+         * So: take the LAST TWO dot-separated components, correct for every
+         * variant. Example:
+         *   _ga=GA1.1.1739468182.1754438400  →  "1739468182.1754438400"
+         *
+         * The cookie is set on `.getdragonsheets.com` (GA4 scopes it to the
+         * highest resolvable domain), which is precisely why this subdomain
+         * can read the landing page's id instead of minting a second one.
+         *
+         * NOT `_ga_<CONTAINER>`, the session cookie — different format, no
+         * client_id in it.
+         */
+        function readGaClientId() {
+          var raw = readCookie("_ga");
+          if (!raw) return null;
+          var parts = raw.split(".");
+          if (parts.length < 4) return null;
+          var id = parts.slice(-2).join(".");
+          return /^\d{1,10}\.\d{9,11}$/.test(id) ? id : null;
+        }
+
+        function collect() {
+          // The cookie carries the LP's true first touch; localStorage fills
+          // gaps (and survives a cookie the user cleared on the LP domain).
+          var fromCookie = parseCookieAttribution(readCookie(ATTRIBUTION_COOKIE));
+          var fromLocal = parseLocalAttribution();
+          var attribution = {};
+          Object.keys(fromLocal).forEach(function (k) {
+            if (fromLocal[k]) attribution[k] = fromLocal[k];
+          });
+          Object.keys(fromCookie).forEach(function (k) {
+            if (fromCookie[k]) attribution[k] = fromCookie[k];
+          });
+          return { attribution: attribution, gaClientId: readGaClientId() };
+        }
+
+        function send(payload) {
+          if (!DRAGONSHEETS_EXTENSION_ID) {
+            log("dormant", { reason: "extension-id-not-set" });
+            return;
+          }
+          if (!(window.chrome && chrome.runtime && chrome.runtime.sendMessage)) {
+            log("dormant", { reason: "no-chrome-runtime" });
+            return;
+          }
+          try {
             chrome.runtime.sendMessage(
               DRAGONSHEETS_EXTENSION_ID,
               { type: "ds-attribution", payload: payload },
-              function () {
-                // Swallow "receiving end does not exist" etc. — the bridge is
-                // best-effort by design.
-                void chrome.runtime.lastError;
+              function (response) {
+                // "Could not establish connection / Receiving end does not
+                // exist" is the NORMAL answer when the extension isn't
+                // installed (or is a different build). Reading lastError
+                // suppresses Chrome's unchecked-error console noise.
+                var err = chrome.runtime.lastError;
+                log(err ? "send-failed" : "sent", {
+                  error: err ? err.message : undefined,
+                  clientId: response && response.clientId
+                });
               }
             );
+          } catch (e) {
+            log("send-threw", { error: String(e) });
           }
-        } catch (e) {
-          /* extension not installed / ID mismatch — fine */
         }
+
+        /**
+         * The `_ga` cookie may not exist yet on a DIRECT visit to this page:
+         * gtag.js loads async and mints it a moment later. A visitor who came
+         * from the landing page already has one — the case that actually
+         * matters — but poll briefly so a direct install still carries a
+         * client_id rather than forcing the extension to mint its own.
+         */
+        var attempts = 0;
+        function run() {
+          var payload = collect();
+          var haveClientId = Boolean(payload.gaClientId);
+          var haveAttribution = Object.keys(payload.attribution).length > 0;
+
+          if (!haveClientId && attempts < 12) {
+            attempts++;
+            setTimeout(run, 250);
+            return;
+          }
+
+          log("collected", {
+            attempts: attempts,
+            hasClientId: haveClientId,
+            hasAttribution: haveAttribution,
+            keys: Object.keys(payload.attribution)
+          });
+
+          if (DEBUG) {
+            log("debug-mode", { wouldSendTo: DRAGONSHEETS_EXTENSION_ID || "(unset)" });
+            // Printed unstringified so gclid and friends stay readable.
+            console.info("[dragonsheets-bridge] payload:", payload);
+            return; // ?debug=1 never sends
+          }
+          send(payload);
+        }
+
+        run();
       })();
     </script>
   </body>
