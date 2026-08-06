@@ -8,7 +8,7 @@ Orientation for humans and agents landing in this repo cold.
 (`getdragonsheets.com`): Amazon Seller Central + Amazon Ads data delivered
 into Google Sheets via a sidebar injected into
 `docs.google.com/spreadsheets`. Modeled mechanism-for-mechanism (never
-code/copy/assets) on hopted.com — see `docs/hopted-teardown.md`.
+code/copy/assets) on hopted.com — see `sellerconnect/sellerconnect/docs/hopted-teardown.md (private repo)` (private repo).
 
 ## Why `-extension`, not `-frontend`
 
@@ -50,7 +50,7 @@ Deferred (all behind the `BackendClient` interface in `src/backend/types.ts`):
 ## Load-bearing links
 
 - Plan: `sellerconnect/DRAGONSHEETS_PLAN.md` (this repo = Phases 3–4)
-- Teardown: `docs/hopted-teardown.md` (architecture rationale, §9 is the
+- Teardown: `sellerconnect/sellerconnect/docs/hopted-teardown.md (private repo)` (private repo) (architecture rationale, §9 is the
   imitate/avoid list this codebase follows)
 - Branding: `Dragon-marketing/BRANDING.md` (Forest `#2F7D4F`, Lime `#98CC65`,
   Deep `#0F3D2E`, Ink `#1A1A1A`, system font stack)

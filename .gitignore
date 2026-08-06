@@ -6,3 +6,6 @@ release/
 .DS_Store
 .env
 .env.local
+
+# Internal competitor analysis lives in the private sellerconnect repo
+docs/hopted-teardown.md

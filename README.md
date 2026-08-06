@@ -85,7 +85,7 @@ site/                         go.getdragonsheets.com (GitHub Pages):
                               /privacy /installed /uninstalled /bootstrap.json
 ```
 
-Key decisions (rationale in `docs/hopted-teardown.md` §9 and `CONTEXT.md`):
+Key decisions (rationale in `sellerconnect/sellerconnect/docs/hopted-teardown.md (private repo)` (private repo) §9 and `CONTEXT.md`):
 
 - **Service-account model**: the extension holds **no Google OAuth scopes**;
   users share the spreadsheet with
@@ -149,7 +149,7 @@ CWS publish (TODO(user-task)).
 ## Related
 
 - `CONTEXT.md` — why this repo exists, what's deferred, links.
-- `docs/hopted-teardown.md` — full competitor teardown this architecture is
+- `sellerconnect/sellerconnect/docs/hopted-teardown.md (private repo)` (private repo) — full competitor teardown this architecture is
   based on.
 - `sellerconnect/DRAGONSHEETS_PLAN.md` — the phase plan (this repo is
   Phases 3–4).
