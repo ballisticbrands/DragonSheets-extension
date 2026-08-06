@@ -18,26 +18,24 @@
  */
 
 /**
- * GA4 web-stream measurement ID, e.g. "G-XXXXXXXXXX".
- *
- * TODO(user-task): fill from DRAGONSHEETS_USER_TASKS.md **Task 4a** step 3
- * (Google Analytics → Admin → Data Streams → the getdragonsheets.com web
- * stream). The SAME id the landing page's gtag snippet uses — one property,
- * two collection paths.
+ * GA4 web-stream measurement ID for the getdragonsheets.com web stream.
+ * The SAME id the landing page's gtag snippet uses — one property, two
+ * collection paths.
  */
-export const GA4_MEASUREMENT_ID: string | null = null;
+export const GA4_MEASUREMENT_ID: string | null = "G-7NC5Q82FB1";
 
 /**
- * Measurement Protocol API secret for that stream.
+ * Measurement Protocol API secret for that stream (GA4 secret named
+ * "Extension").
  *
- * TODO(user-task): fill from DRAGONSHEETS_USER_TASKS.md **Task 4a** step 6
- * (Data Streams → the stream → *Measurement Protocol API secrets* → Create →
- * name it "extension"). This is a write-only credential: it can send events
- * to the property, it cannot read anything. It ships inside the extension
- * bundle, which is public — that is expected and is why Google scopes it the
- * way it does. Rotate it from the same screen if it is ever abused.
+ * This is a write-only credential: it can send events to the property, it
+ * cannot read anything. It ships inside the extension bundle, which is public
+ * once the extension is on the Web Store — that is expected, and is why Google
+ * scopes MP secrets the way it does. The realistic abuse is someone spamming
+ * junk events into the property; rotate from Admin → Data Streams → the stream
+ * → Measurement Protocol API secrets if that ever happens.
  */
-export const GA4_API_SECRET: string | null = null;
+export const GA4_API_SECRET: string | null = "geKw0wJWQ5ajkH7A4F0HKQ";
 
 /**
  * When true, events go to GA4's **validation** endpoint
