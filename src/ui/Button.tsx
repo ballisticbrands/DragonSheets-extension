@@ -10,6 +10,12 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Size = "sm" | "md";
+
+const SIZE_CLASSES: Record<Size, string> = {
+  sm: "px-3 py-1.5 text-[11px]",
+  md: "px-4 py-2.5 text-[13px]",
+};
 
 const VARIANT_CLASSES: Record<Variant, string> = {
   primary:
@@ -23,14 +29,21 @@ const VARIANT_CLASSES: Record<Variant, string> = {
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
+  size?: Size;
   children: ReactNode;
 }
 
-export function Button({ variant = "primary", className = "", children, ...rest }: ButtonProps) {
+export function Button({
+  variant = "primary",
+  size = "md",
+  className = "",
+  children,
+  ...rest
+}: ButtonProps) {
   return (
     <button
       {...rest}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-[13px] font-semibold uppercase tracking-wide transition-all disabled:cursor-not-allowed ${VARIANT_CLASSES[variant]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-lg font-semibold uppercase tracking-wide transition-all disabled:cursor-not-allowed ${SIZE_CLASSES[size]} ${VARIANT_CLASSES[variant]} ${className}`}
     >
       {children}
     </button>
