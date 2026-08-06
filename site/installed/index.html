@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DragonSheets is installed</title>
+    <meta name="description" content="DragonSheets is installed — open a Google Sheet to get started." />
+    <link rel="stylesheet" href="/assets/site.css" />
+    <meta name="robots" content="noindex" />
+    <!-- TODO(user-task): GA4 gtag snippet here (measurement ID TBD — DRAGONSHEETS_PLAN Phase 2).
+         Use the dataLayer.push(arguments) shim per the funnel skill, and fire
+         an `extension_installed` event on load. -->
+    <!-- TODO(user-task): Microsoft Clarity snippet (project ID TBD). -->
+    <!-- TODO(user-task): Meta pixel snippet + <noscript> (dataset ID TBD). -->
+  </head>
+  <body>
+    <div class="wrap">
+      <a class="logo" href="/"><span class="mark">DS</span><span class="word">DragonSheets</span></a>
+      <h1>Installed. One more step.</h1>
+      <p>DragonSheets lives inside Google Sheets — there's nothing to open here.</p>
+
+      <ol class="steps">
+        <li>
+          <b>Open any Google Sheet</b> — an existing one or a
+          <a href="https://sheets.new" rel="noopener">blank one</a>.
+        </li>
+        <li>
+          <b>Click the green DragonSheets button</b> in the Sheets toolbar
+          (top left, next to the toolbar icons).
+        </li>
+        <li>
+          <b>Sign in with Google</b> and follow the 2-minute setup — you'll
+          connect Amazon and pick your first report.
+        </li>
+      </ol>
+
+      <p><a class="btn" href="https://sheets.new" rel="noopener">Open a blank Sheet</a></p>
+
+      <footer>
+        © Ballistic Brands · <a href="/privacy/">Privacy policy</a>
+      </footer>
+    </div>
+
+    <!-- Attribution bridge (DRAGONSHEETS_PLAN Phase 5.2).
+         This page shares eTLD+1 with getdragonsheets.com, so the LP's
+         first-party `dragonbot_attribution` cookie (domain .getdragonsheets.com)
+         is readable here. We hand the blob to the extension via
+         externally_connectable messaging — the only channel that survives the
+         Chrome Web Store attribution black hole. -->
+    <script>
+      (function () {
+        // TODO(user-task): set to the real extension ID after the first Chrome
+        // Web Store publish (the ID is minted by CWS). Empty = bridge dormant.
+        var DRAGONSHEETS_EXTENSION_ID = "";
+
+        function readCookie(name) {
+          var m = document.cookie.match(
+            new RegExp("(?:^|;\\s*)" + name + "=([^;]*)")
+          );
+          return m ? m[1] : null;
+        }
+
+        var payload = null;
+        try {
+          var raw =
+            readCookie("dragonbot_attribution") ||
+            window.localStorage.getItem("dragonbot_attribution");
+          if (raw) {
+            try {
+              payload = JSON.parse(decodeURIComponent(raw));
+            } catch (e) {
+              payload = { raw: raw };
+            }
+          }
+        } catch (e) {
+          /* cookie/localStorage blocked — nothing to bridge */
+        }
+
+        try {
+          if (
+            payload &&
+            DRAGONSHEETS_EXTENSION_ID &&
+            window.chrome &&
+            chrome.runtime &&
+            chrome.runtime.sendMessage
+          ) {
+            chrome.runtime.sendMessage(
+              DRAGONSHEETS_EXTENSION_ID,
+              { type: "ds-attribution", payload: payload },
+              function () {
+                // Swallow "receiving end does not exist" etc. — the bridge is
+                // best-effort by design.
+                void chrome.runtime.lastError;
+              }
+            );
+          }
+        } catch (e) {
+          /* extension not installed / ID mismatch — fine */
+        }
+      })();
+    </script>
+  </body>
+</html>

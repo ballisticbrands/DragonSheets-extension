@@ -1,0 +1,52 @@
+/* Shared styling for the go.getdragonsheets.com static pages (BRANDING.md palette). */
+:root {
+  --forest: #2f7d4f;
+  --forest-dark: #256b42;
+  --lime: #98cc65;
+  --deep: #0f3d2e;
+  --ink: #1a1a1a;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--ink);
+  background: #fff;
+  line-height: 1.6;
+}
+.wrap { max-width: 720px; margin: 0 auto; padding: 48px 24px 96px; }
+.logo { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); }
+.logo .mark {
+  width: 36px; height: 36px; border-radius: 10px; background: var(--forest);
+  color: #fff; display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 14px;
+}
+.logo .word { font-weight: 700; font-size: 17px; letter-spacing: -0.01em; }
+h1 { font-size: 32px; font-weight: 800; letter-spacing: -0.025em; margin: 32px 0 12px; }
+h2 { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin: 28px 0 8px; }
+p, li { font-size: 15px; color: rgba(26, 26, 26, 0.7); }
+ul, ol { padding-left: 22px; margin: 8px 0 16px; }
+a { color: var(--forest); }
+.steps { counter-reset: step; list-style: none; padding: 0; margin: 24px 0; }
+.steps li {
+  position: relative; padding: 0 0 20px 44px; counter-increment: step;
+}
+.steps li::before {
+  content: counter(step);
+  position: absolute; left: 0; top: 0;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(47, 125, 79, 0.1); color: var(--forest);
+  font-weight: 700; font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+}
+.btn {
+  display: inline-block; margin-top: 8px; padding: 12px 28px; border-radius: 8px;
+  background: rgba(47, 125, 79, 0.1); color: var(--forest);
+  font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em;
+  text-decoration: none; transition: all 0.15s ease;
+}
+.btn:hover { background: var(--forest); color: #fff; }
+.muted { font-size: 13px; color: rgba(26, 26, 26, 0.4); }
+.card {
+  border: 1px solid #e5e7eb; border-radius: 16px; padding: 20px 24px; margin: 16px 0;
+}
+footer { margin-top: 64px; font-size: 12px; color: rgba(26, 26, 26, 0.35); }

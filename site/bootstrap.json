@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "updatedAt": "2026-08-06",
+  "comment": "Remote selector-map override for the DragonSheets extension. The service worker fetches this every 6h and caches it in chrome.storage.local; the content script merges it over bundled defaults (src/content/selector-map.ts). When Google ships a Sheets DOM change, fix the selector HERE — no CWS review cycle needed.",
+  "selectors": {
+    "docsBars": "#docs-bars",
+    "docsToolbar": "#docs-toolbar",
+    "shareButton": "#docs-titlebar-share-client-button",
+    "titleLabel": "#docs-title-input-label-inner",
+    "nameBox": "#t-name-box",
+    "presenceContainer": "#docs-presence-container",
+    "sheetTabName": ".docs-sheet-tab-name"
+  }
+}
