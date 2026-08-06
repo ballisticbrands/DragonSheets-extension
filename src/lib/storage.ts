@@ -14,6 +14,30 @@ export const STORAGE_KEYS = {
   mockState: "ds:mock-state",
   /** Attribution blob delivered by go.getdragonsheets.com via externally_connectable. */
   attribution: "ds:attribution",
+
+  // ---------- analytics (src/analytics/*) ----------
+  /** `{ id, source }` — the GA4 client_id and where it came from ("bridge" | "minted"). */
+  gaClientId: "ds:ga-client-id",
+  /** `{ id, startedAt, lastEventAt }` — rolling 30-minute GA4 session. */
+  gaSession: "ds:ga-session",
+  /** FIFO array of un-sent Measurement Protocol envelopes (capped). */
+  gaQueue: "ds:ga-queue",
+  /** `true` once ANY event has been accepted by GA4 under the current client_id. */
+  gaSentAny: "ds:ga-sent-any",
+  /** `true` once `sign_up` has fired. It fires exactly once, ever. */
+  gaSignupLogged: "ds:ga-signup-logged",
+  /** `true` once the full attribution blob has been attached to an event. */
+  gaAttributionAttached: "ds:ga-attribution-attached",
+  /** Opaque user id set at sign-in; sent as MP `user_id`. Never PII. */
+  gaUserId: "ds:ga-user-id",
+  /**
+   * Connection ids this install has already fired an activation for.
+   * Deliberately named to mirror frontend-shared's `dragonbot_activations_v1`
+   * localStorage key — identical shape (a string array), own namespace.
+   */
+  activations: "dragonsheets_activations_v1",
+  /** "bridge" | "direct" — how this install's attribution was obtained. */
+  attributionSource: "ds:attribution-source",
 } as const;
 
 function withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
