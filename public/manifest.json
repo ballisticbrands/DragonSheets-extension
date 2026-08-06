@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "DragonSheets: Amazon Seller Central & PPC for Google Sheets",
+  "short_name": "DragonSheets",
+  "version": "0.1.0",
+  "description": "Amazon Seller Central and Amazon Ads data, live in Google Sheets. Syncs, PPC reports, and AI — no CSV exports.",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "DragonSheets",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "settings.html",
+  "background": {
+    "service_worker": "assets/service-worker.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "alarms", "identity"],
+  "host_permissions": [
+    "https://*.getdragonsheets.com/*",
+    "https://api.getdragonbot.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://docs.google.com/spreadsheets/*"],
+      "js": ["content-loader.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/*", "mock-oauth.html"],
+      "matches": ["https://docs.google.com/*"],
+      "use_dynamic_url": false
+    }
+  ],
+  "externally_connectable": {
+    "matches": ["https://go.getdragonsheets.com/*"]
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://*.getdragonsheets.com https://api.getdragonbot.com https://www.googleapis.com"
+  }
+}
