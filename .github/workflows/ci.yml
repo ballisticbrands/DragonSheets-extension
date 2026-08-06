@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Zip extension
+        run: npm run zip
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dragonsheets-extension
+          path: release/*.zip
+          if-no-files-found: error

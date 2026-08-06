@@ -1,0 +1,60 @@
+name: Release
+
+# Tag vX.Y.Z → build → zip → GitHub release with the zip attached.
+# Chrome Web Store upload is stubbed below until CWS credentials exist
+# (DRAGONSHEETS_PLAN Phase 6).
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Zip extension
+        run: npm run zip
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.zip
+          generate_release_notes: true
+
+      # TODO(user-task): enable once the CWS developer account + API access
+      # exist (Phase 6). Requires repo secrets:
+      #   CWS_EXTENSION_ID, CWS_CLIENT_ID, CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN
+      #
+      # - name: Upload to Chrome Web Store (draft, manual publish)
+      #   run: |
+      #     npx chrome-webstore-upload-cli@3 upload \
+      #       --source release/*.zip \
+      #       --extension-id "$CWS_EXTENSION_ID" \
+      #       --client-id "$CWS_CLIENT_ID" \
+      #       --client-secret "$CWS_CLIENT_SECRET" \
+      #       --refresh-token "$CWS_REFRESH_TOKEN"
+      #   env:
+      #     CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+      #     CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+      #     CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+      #     CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
