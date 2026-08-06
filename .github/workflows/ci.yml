@@ -22,6 +22,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Bundles test/analytics.harness.ts with esbuild and runs it under node
+      # with chrome.* + fetch stubbed. Never contacts GA4.
+      - name: Analytics harness
+        run: npm run test:analytics
+
       - name: Build
         run: npm run build
 
