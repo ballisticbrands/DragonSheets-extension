@@ -8,13 +8,25 @@ import { getBackend } from "../backend";
 import type { Session } from "../backend/types";
 import { sidebarStore } from "../content/sidebar-store";
 import { getSpreadsheetId, type SelectorMap } from "../content/selector-map";
-import { readRouteFromUrl, writeRouteToUrl, type Route } from "./router";
+import {
+  readRouteFromUrl,
+  sameRoute,
+  toRoute,
+  writeRouteToUrl,
+  type Route,
+  type RouteLike,
+} from "./router";
 import { Welcome } from "./routes/Welcome";
 import { ShareSpreadsheet } from "./routes/ShareSpreadsheet";
 import { OnboardingCompleted } from "./routes/OnboardingCompleted";
 import { Home } from "./routes/Home";
 import { ConnectAmazon } from "./routes/ConnectAmazon";
-import { StubScreen } from "./routes/StubScreen";
+import { Syncs } from "./routes/syncs/Syncs";
+import { SyncWizard } from "./routes/syncs/SyncWizard";
+import { SyncDetail } from "./routes/syncs/SyncDetail";
+import { Agent } from "./routes/Agent";
+import { Templates } from "./routes/Templates";
+import { Settings } from "./routes/Settings";
 import { Spinner } from "../ui/Spinner";
 
 const MIN_WIDTH = 320;
@@ -22,12 +34,18 @@ const MAX_WIDTH = 560;
 const DEFAULT_WIDTH = 360;
 
 export interface AppContext {
-  navigate: (route: Route) => void;
+  /** Push a route (adds a browser history entry). */
+  navigate: (route: RouteLike) => void;
+  /** Mirror a route without a history entry — for sub-state like wizard steps. */
+  replace: (route: RouteLike) => void;
   session: Session | null;
   refreshSession: () => Promise<void>;
   spreadsheetId: string;
   selectors: SelectorMap;
   closeSidebar: () => void;
+  /** Scroll the sidebar body — screens are taller than the panel. */
+  scrollToTop: () => void;
+  scrollToBottom: () => void;
 }
 
 export function SidebarApp({ selectors }: { selectors: SelectorMap }) {
@@ -37,6 +55,7 @@ export function SidebarApp({ selectors }: { selectors: SelectorMap }) {
   const [booted, setBooted] = useState(false);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const dragState = useRef<{ startX: number; startWidth: number } | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
 
   const spreadsheetId = getSpreadsheetId() ?? "unknown";
 
@@ -72,9 +91,16 @@ export function SidebarApp({ selectors }: { selectors: SelectorMap }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const navigate = useCallback((r: Route) => {
-    setRoute(r);
-    writeRouteToUrl(r, "push");
+  const navigate = useCallback((r: RouteLike) => {
+    const next = toRoute(r);
+    setRoute(next);
+    writeRouteToUrl(next, "push");
+  }, []);
+
+  const replace = useCallback((r: RouteLike) => {
+    const next = toRoute(r);
+    setRoute((prev) => (sameRoute(prev, next) ? prev : next));
+    writeRouteToUrl(next, "replace");
   }, []);
 
   const closeSidebar = useCallback(() => {
@@ -82,12 +108,21 @@ export function SidebarApp({ selectors }: { selectors: SelectorMap }) {
     writeRouteToUrl(null, "replace");
   }, []);
 
+  const scrollToTop = useCallback(() => {
+    bodyRef.current?.scrollTo({ top: 0 });
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    const el = bodyRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, []);
+
   // Entry gate (hopted §5.4): choose the screen from state when the panel is
   // opened without a deep link.
   useEffect(() => {
     if (!open || !booted) return;
     if (route) return;
-    setRoute(session ? "home" : "welcome");
+    setRoute(toRoute(session ? "home" : "welcome"));
   }, [open, booted, route, session]);
 
   // Drag-to-resize.
@@ -113,7 +148,17 @@ export function SidebarApp({ selectors }: { selectors: SelectorMap }) {
 
   if (!open) return null;
 
-  const ctx: AppContext = { navigate, session, refreshSession, spreadsheetId, selectors, closeSidebar };
+  const ctx: AppContext = {
+    navigate,
+    replace,
+    session,
+    refreshSession,
+    spreadsheetId,
+    selectors,
+    closeSidebar,
+    scrollToTop,
+    scrollToBottom,
+  };
 
   return (
     <div
@@ -150,7 +195,7 @@ export function SidebarApp({ selectors }: { selectors: SelectorMap }) {
         </button>
       </div>
       {/* body */}
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div ref={bodyRef} className="flex flex-1 flex-col overflow-y-auto px-4 py-4">
         {!booted || !route ? (
           <div className="flex h-full items-center justify-center">
             <Spinner size={22} />
@@ -167,7 +212,7 @@ export function SidebarApp({ selectors }: { selectors: SelectorMap }) {
 }
 
 function Screen({ route, ctx }: { route: Route; ctx: AppContext }) {
-  switch (route) {
+  switch (route.name) {
     case "welcome":
       return <Welcome ctx={ctx} />;
     case "share-spreadsheet":
@@ -179,37 +224,23 @@ function Screen({ route, ctx }: { route: Route; ctx: AppContext }) {
     case "connect-amazon":
       return <ConnectAmazon ctx={ctx} />;
     case "syncs":
+      return <Syncs ctx={ctx} />;
+    case "sync-new":
+      // Remount on prefill change so the wizard re-materialises the draft.
       return (
-        <StubScreen
+        <SyncWizard
+          key={`${route.params.template ?? ""}|${route.params.proposal ?? ""}`}
           ctx={ctx}
-          title="Live Data Syncs"
-          description="Pick a report, choose columns, set a schedule — your sheet stays fresh on its own. Coming online in the next build."
+          params={route.params}
         />
       );
+    case "sync-detail":
+      return <SyncDetail key={route.params.id ?? ""} ctx={ctx} params={route.params} />;
     case "agent":
-      return (
-        <StubScreen
-          ctx={ctx}
-          title="Solve with AI"
-          description="Describe the report you want in plain English — the agent builds it. Coming online in the next build."
-        />
-      );
+      return <Agent ctx={ctx} />;
     case "templates":
-      return (
-        <StubScreen
-          ctx={ctx}
-          title="Templates"
-          description="P&L by SKU, TACOS dashboard, restock planner and more — one-click setups. Coming online in the next build."
-        />
-      );
+      return <Templates ctx={ctx} params={route.params} />;
     case "settings":
-      return (
-        <StubScreen
-          ctx={ctx}
-          title="Settings"
-          description="Connected accounts, plan and usage. Coming online in the next build."
-          showConnections
-        />
-      );
+      return <Settings ctx={ctx} params={route.params} />;
   }
 }

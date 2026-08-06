@@ -4,12 +4,12 @@ import { getBackend } from "../../backend";
 import type { ConnectionStatus, Usage } from "../../backend/types";
 import { Badge, Card } from "../../ui/Card";
 import type { AppContext } from "../App";
-import type { Route } from "../router";
+import type { RouteName } from "../router";
 
-const NAV: Array<{ route: Route; title: string; description: string }> = [
+const NAV: Array<{ route: RouteName; title: string; description: string }> = [
+  { route: "agent", title: "AI Agent", description: "Describe the sheet you want — it drafts the sync" },
+  { route: "templates", title: "Templates", description: "P&L by SKU, TACOS, restock and more" },
   { route: "syncs", title: "Syncs", description: "Live data syncs into this spreadsheet" },
-  { route: "agent", title: "AI Agent", description: "Build reports by describing them" },
-  { route: "templates", title: "Templates", description: "Ready-made seller dashboards" },
   { route: "settings", title: "Settings", description: "Accounts, plan and usage" },
 ];
 

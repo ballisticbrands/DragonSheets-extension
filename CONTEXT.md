@@ -29,7 +29,11 @@ spreadsheet with service account → completed fork), Amazon connect UI with a
 mock consent popup, shadow-DOM sidebar with deep-linkable routing, service
 worker (installed/uninstalled pages, remote selector-map refresh,
 externally_connectable attribution receiver), the go.getdragonsheets.com
-static site, CI.
+static site, CI — **plus the four feature surfaces** (Phase 4 complete):
+the six-step Live Data Sync wizard with cross-report blending and calculated
+columns, the AI agent chat with review-then-apply proposals, the template
+gallery, and settings (accounts / Google / plan / members / about). All of it
+runs against `MockBackend`.
 
 Deferred (all behind the `BackendClient` interface in `src/backend/types.ts`):
 
@@ -39,9 +43,9 @@ Deferred (all behind the `BackendClient` interface in `src/backend/types.ts`):
   (`POST /v1/connect/amazon-selling-partner/start` + `dragonbot-oauth-result`
   postMessage — the mock already speaks this contract), agent backend,
   billing.
-- **Feature screens** — Syncs wizard, AI agent chat, template gallery,
-  settings are "Coming online" stubs; next build phase (Phase 4 completion)
-  fills them against the same mock.
+- **Sheet writes** — a sync's "first run" is simulated end to end (progress
+  stages, row counts, run history) but nothing is written into the actual
+  spreadsheet; the writer is server-side and lands with Phase 8.
 - **Tracking** — GA4/Clarity/Meta IDs unminted (Phases 2 & 5); placeholder
   comments sit where the snippets go.
 - **CWS listing** — Phase 6; release workflow's CWS upload step is commented

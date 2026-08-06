@@ -35,9 +35,12 @@ npm run icons        # regenerate placeholder icons (pure-node PNG encoder)
 The default (and currently only) build is fully mocked:
 
 - **Backend**: `src/backend/types.ts` defines the `BackendClient` interface
-  (auth, sheet access, Amazon connect, syncs, report catalog, agent chat with
-  202-continuation, templates, usage). `src/backend/mock.ts` implements it
-  with realistic latencies and state persisted in `chrome.storage.local`.
+  (auth, sheet access, Amazon connect + linked accounts, sync CRUD/run
+  history, report catalog, agent chat with 202-continuation + proposals,
+  templates + materialisation, workspace members, plan usage).
+  `src/backend/mock.ts` implements it with realistic latencies and state
+  persisted in `chrome.storage.local`; `src/backend/catalog.ts` holds the
+  static report catalog (14 reports) and the 6 solution templates.
   `getBackend()` (`src/backend/index.ts`) returns the mock; a
   `VITE_BACKEND=real` build will select the Phase-8 real client.
 - **Auth**: mock mode signs in instantly with a fake profile. The real path
@@ -50,7 +53,26 @@ The default (and currently only) build is fully mocked:
   consent callback will post. Phase 8 swaps the popup URL for
   `POST /v1/connect/amazon-selling-partner/start`; the sidebar listener
   doesn't change.
+- **Feature screens** run entirely against the mock: the sync wizard writes
+  real `Sync` records, "Run now" produces run history and row counts, the
+  agent returns keyword-routed answers (some carrying an applyable proposal),
+  and templates materialise into prefilled wizard drafts. Calculated-column
+  formulas are parsed, validated and previewed client-side by
+  `src/lib/formula.ts` — no `eval`, MV3 CSP-safe.
 - "Sign out" on the settings page clears all mock state.
+
+### Deep links (`dsr=`)
+
+Every screen is addressable on the live Sheets URL, sub-state included:
+
+| Link | Opens |
+|---|---|
+| `?dsr=syncs` | sync list |
+| `?dsr=sync-new&dsp-step=columns` | wizard, columns step |
+| `?dsr=sync-new&dsp-template=tpl-tacos` | wizard prefilled from a template |
+| `?dsr=sync-detail&dsp-id=<syncId>` | one sync + its run history |
+| `?dsr=templates&dsp-category=advertising` | filtered template gallery |
+| `?dsr=settings&dsp-tab=plan` | settings, plan & usage tab |
 
 ## Architecture
 
@@ -72,8 +94,10 @@ src/app/                      sidebar React app
   │                           param on the Sheets URL (deep-linkable, Back/
   │                           Forward works — hopted's trick)
   └─ routes/                  welcome → share-spreadsheet → onboarding-completed
-                              → home; connect-amazon; stubs: syncs/agent/
-                              templates/settings ("Coming online")
+                              → home; connect-amazon; agent (chat + proposals);
+                              templates (gallery); settings (5 tabs);
+                              syncs/ (list, 6-step wizard, per-sync detail +
+                              calculated-column editor)
 src/backend/                  BackendClient interface + MockBackend
 src/auth/                     mock + dormant real Google sign-in
 src/background/               module service worker: installed/uninstalled

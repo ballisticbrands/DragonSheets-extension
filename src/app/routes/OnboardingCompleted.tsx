@@ -3,10 +3,10 @@
 import { Badge, Card } from "../../ui/Card";
 import { Button } from "../../ui/Button";
 import type { AppContext } from "../App";
-import type { Route } from "../router";
+import type { RouteName } from "../router";
 
 const PATHS: Array<{
-  route: Route;
+  route: RouteName;
   title: string;
   description: string;
   recommended?: boolean;
@@ -23,7 +23,7 @@ const PATHS: Array<{
     description: "P&L by SKU, TACOS dashboard, restock planner — ready-made setups.",
   },
   {
-    route: "syncs",
+    route: "sync-new",
     title: "New Live Data Sync",
     description: "Pick a report and schedule yourself. Full control, no code.",
   },
