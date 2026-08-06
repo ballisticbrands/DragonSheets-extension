@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* This stylesheet is compiled by Tailwind and either:
+   - injected into the sidebar's Shadow DOM as a constructed stylesheet
+     (imported with ?inline from src/content/mount.tsx), or
+   - linked normally by the settings.html options page.
+   Keep everything scoped to utility classes — no global element selectors
+   beyond Tailwind's preflight (which is safely contained by the shadow root
+   on the Sheets page). */
