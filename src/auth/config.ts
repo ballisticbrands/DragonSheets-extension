@@ -8,14 +8,14 @@
  * / ID-token flow, which is secret-less by design.
  *
  * ⚠️ TODO(user-task): this client ID alone is not enough to make real sign-in
- * work. The extension's redirect URL must be registered on the client, and it
- * contains the extension ID, which is only stable after the first Chrome Web
- * Store publish (or by pinning a `key` in the manifest). So, once published:
+ * work. The extension's redirect URL must also be registered on the client:
  *
  *   1. GCP console (project dragonbot-487712) → APIs & Services → Credentials
- *      → this client → Authorized redirect URIs → add:
- *        https://<EXTENSION_ID>.chromiumapp.org/oauth2
+ *      → this client → Authorized redirect URIs → add exactly:
+ *        https://papoimmliahhmamjdagmajeddimpmojo.chromiumapp.org/oauth2
  *   2. Rebuild with VITE_AUTH_MODE=real.
+ *
+ * (That ID is the Chrome Web Store item ID, assigned at draft creation.)
  *
  * Until that redirect URI exists, real mode fails at the consent screen with
  * `redirect_uri_mismatch`; mock mode remains the default and is unaffected.

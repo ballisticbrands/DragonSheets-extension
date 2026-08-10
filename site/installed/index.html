@@ -137,15 +137,12 @@
          ══════════════════════════════════════════════════════════════════ -->
     <script>
       (function () {
-        // ─── TODO(user-task) ────────────────────────────────────────────
-        // Set to the real extension ID after the first Chrome Web Store
-        // publish (CWS mints the ID; it cannot be known before then). A
-        // 32-character lowercase a–p string, e.g.
-        // "abcdefghijklmnopabcdefghijklmnop".
+        // The Chrome Web Store item ID. Assigned when the draft item is
+        // created, so it is stable from before the first publish.
         // Empty ⇒ the bridge is DORMANT: it still logs and still honours
         // ?debug=1, it just never sends. It must never throw when dormant —
         // this is the post-install landing page and has to render regardless.
-        var DRAGONSHEETS_EXTENSION_ID = "";
+        var DRAGONSHEETS_EXTENSION_ID = "papoimmliahhmamjdagmajeddimpmojo";
         // ────────────────────────────────────────────────────────────────
 
         var DEBUG = /(?:^|[?&])debug=1(?:&|$)/.test(location.search);
