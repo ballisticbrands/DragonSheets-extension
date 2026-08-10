@@ -95,7 +95,7 @@ const DATE_RANGE_FACTOR: Record<DateRangePreset, number> = {
 };
 
 const WORKSPACE_MEMBERS: WorkspaceMember[] = [
-  { id: "wm_owner", email: "owner@ballisticbrands.co", name: "You", role: "owner", status: "active" },
+  { id: "wm_owner", email: "info@getdragonsheets.com", name: "You", role: "owner", status: "active" },
 ];
 
 function reportById(reportId: string): ReportCatalogEntry | undefined {

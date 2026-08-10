@@ -141,7 +141,7 @@ https://go.getdragonsheets.com/privacy/
 These are **publisher-level**, not item-level, which is why they read oddly next to the item
 errors. Developer console → **Settings** (left sidebar, under the account, not the item):
 
-1. **Contact email** — enter `owner@ballisticbrands.co`.
+1. **Contact email** — enter `info@getdragonsheets.com`.
 2. **Verify it** — Google sends a confirmation mail; click the link. Publishing stays blocked
    until it shows as verified, and the mail sometimes lands in spam.
 

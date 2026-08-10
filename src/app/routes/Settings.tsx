@@ -35,7 +35,7 @@ function isTab(v: string | undefined): v is TabId {
   return v !== undefined && TABS.some((t) => t.id === v);
 }
 
-const SUPPORT_EMAIL = "support@getdragonsheets.com";
+const SUPPORT_EMAIL = "info@getdragonsheets.com";
 const PRIVACY_URL = "https://go.getdragonsheets.com/privacy/";
 
 export function Settings({ ctx, params }: { ctx: AppContext; params: Record<string, string> }) {
