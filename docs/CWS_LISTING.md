@@ -114,29 +114,37 @@ https://go.getdragonsheets.com/privacy/
 
 ---
 
-## Graphical assets
+## Graphical assets — ✅ READY (2026-08-10)
 
-⚠️ **These are the one thing that cannot be produced until the extension has been run in a
-browser** (see DRAGONSHEETS_USER_TASKS.md Task 8). Every screenshot must show real UI.
+Captured from the real extension running in a real Google Sheet, then resized to the exact
+1280×800 the store requires. In `store-assets/`, upload in this order:
 
-| Asset | Spec | Status |
+| # | File | Shows |
 |---|---|---|
-| Store icon | 128×128 PNG | ✅ in repo (`public/icons/icon128.png`) |
-| Screenshots | 1280×800 (preferred) or 640×400 — **1 required, 5 allowed** | ❌ needs a browser run |
-| Small promo tile | 440×280 PNG | ❌ optional, but listings with one convert better |
-| Marquee promo tile | 1400×560 PNG | ❌ optional, only needed for featuring |
+| **1** | `screenshot-1-ai-agent.png` | **PRIMARY.** Sidebar's "Solve with AI" beside a populated sheet, with a real prompt typed in. The one-frame explanation of the product. |
+| 2 | `screenshot-2-home.png` | Sidebar home: Connect Amazon, AI Agent, Templates, Syncs, Settings |
+| 3 | `screenshot-3-connected-accounts.png` | Settings → Seller Central + Amazon Ads both connected |
+| 4 | `screenshot-4-templates.png` | Template gallery — P&L by SKU |
+| 5 | `screenshot-5-templates-ppc.png` | Template gallery — search-term explorer / returns monitor |
 
-**Suggested five screenshots**, in this order (mirrors the funnel):
-1. The sidebar open beside a populated sheet — the "what you get" shot, most important.
-2. The sync wizard on the report-picker step.
-3. The AI agent mid-conversation with a proposal card.
-4. The template gallery.
-5. The connect-Amazon screen (trust signal).
+Store icon: `public/icons/icon128.png` (128×128) ✅
 
-Capture at exactly 1280×800 with the browser zoomed so the sidebar fills a meaningful share
-of the frame. Once the extension runs, I can automate these with Playwright.
+Screenshots 4 and 5 are sidebar-only captures, centre-padded onto the 1280×800 canvas with a
+light neutral (#F2F5F2). 1–3 are full-window and needed only a resize.
 
----
+### ⚠️ Read before uploading: the "Mock mode" footer
+
+Screenshots 1–3 include the sidebar's footer line: *"Mock mode — no data leaves this browser
+yet."* That is **deliberately left in**. The extension genuinely is running on mock data at
+v0.1.0, so a listing whose screenshots hid that line would imply live Amazon syncing we do
+not yet do. Leaving it is both the honest choice and consistent with shipping **unlisted**.
+
+**Retake screenshots 1–3 before flipping the listing to Public** — by then the footer will be
+gone on its own, because the backend will be real.
+
+Optional and not blocking: a 440×280 small promo tile (improves placement in store browsing)
+and a 1400×560 marquee tile (only needed if Google ever features us). Neither is required to
+publish.
 
 ## Submission checklist
 
