@@ -1,22 +1,32 @@
 /**
- * Connect Amazon (route: connect-amazon) — Seller Central + Ads connect cards
- * with a mock consent-popup flow.
+ * Connect Amazon (route: connect-amazon) — Seller Central + Ads connect cards.
  *
- * Popup contract (kept identical to the real one so Phase 8 is a URL swap):
+ * Popup contract:
  *  1. backend.start*Connect() returns a consent `url`
- *     (mock: our web-accessible mock-oauth.html; real: the URL from
- *     POST /v1/connect/amazon-selling-partner/start).
+ *     (mock: our web-accessible mock-oauth.html; real: `authorization_url`
+ *     from POST /v1/connect/amazon-selling-partner/start).
  *  2. window.open() that url in a small centered popup.
- *  3. The popup posts {type: "dragonbot-oauth-result", provider, status}
- *     back to window.opener and closes itself.
- *  4. We reconcile from *connection status*, not from the popup message
- *     alone (DRAGONSHEETS_PLAN Phase 5 principle). The postMessage triggers a
- *     reconcile; it never fires an analytics event itself.
+ *  3. The result comes back by one of TWO routes, because the mock and the
+ *     real backend land in different places:
+ *       · mock  — the popup postMessages {type:"dragonbot-oauth-result"} to
+ *         window.opener and closes itself.
+ *       · real  — the backend bounces the popup to
+ *         https://go.getdragonsheets.com/oauth-complete/, which is
+ *         `externally_connectable` and messages the service worker; the SW
+ *         re-broadcasts to us as MSG.oauthResultBroadcast.
+ *     Both are handled; neither is trusted as the source of truth.
+ *  4. We reconcile from *connection status*, never from the message alone
+ *     (DRAGONSHEETS_PLAN Phase 5 principle). The message triggers a re-read
+ *     and a reconcile; it never fires an analytics event itself.
+ *  5. Belt and braces: refocusing the sheet also re-reads connections, so a
+ *     popup that was blocked, closed early, or never bounced back still
+ *     resolves the moment the user comes back to the tab.
  */
 import { useCallback, useEffect, useState } from "react";
 import { reconcileConnectionActivations } from "../../analytics";
 import { getBackend } from "../../backend";
 import type { ConnectProvider, ConnectionStatus } from "../../backend/types";
+import { MSG } from "../../lib/messages";
 import { Badge, Card } from "../../ui/Card";
 import { Button } from "../../ui/Button";
 import { Spinner } from "../../ui/Spinner";
@@ -49,9 +59,14 @@ function openCenteredPopup(url: string): WindowProxy | null {
 export function ConnectAmazon({ ctx }: { ctx: AppContext }) {
   const [conn, setConn] = useState<ConnectionStatus | null>(null);
   const [pending, setPending] = useState<ConnectProvider | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    setConn(await getBackend().getConnectionStatus());
+    try {
+      setConn(await getBackend().getConnectionStatus());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }, []);
 
   useEffect(() => {
@@ -90,15 +105,52 @@ export function ConnectAmazon({ ctx }: { ctx: AppContext }) {
     return () => window.removeEventListener("message", onMessage);
   }, [refresh]);
 
+  // Real path: the service worker relays the /oauth-complete/ bounce page's
+  // message. Same discipline as above — re-read state, never trust the nudge.
+  useEffect(() => {
+    const onRuntimeMessage = (message: unknown) => {
+      if ((message as { type?: string } | null)?.type !== MSG.oauthResultBroadcast) return;
+      void (async () => {
+        setPending(null);
+        await refresh();
+        void reconcileConnectionActivations();
+      })();
+    };
+    chrome.runtime.onMessage.addListener(onRuntimeMessage);
+    return () => chrome.runtime.onMessage.removeListener(onRuntimeMessage);
+  }, [refresh]);
+
+  // Safety net: a consent popup can end without ever reaching us (blocked,
+  // closed early, or bounced somewhere that can't message the extension). The
+  // connection still exists server-side, so re-read whenever the user returns
+  // to the sheet rather than leaving the card stuck on "Waiting for Amazon…".
+  useEffect(() => {
+    const onFocus = () => {
+      void (async () => {
+        await refresh();
+        void reconcileConnectionActivations();
+      })();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refresh]);
+
   const connect = async (provider: ConnectProvider) => {
     setPending(provider);
-    const backend = getBackend();
-    const start =
-      provider === "amazon-selling-partner"
-        ? await backend.startSpApiConnect()
-        : await backend.startAdsConnect();
-    const popup = openCenteredPopup(start.url);
-    if (!popup) setPending(null); // popup blocked
+    setError(null);
+    try {
+      const backend = getBackend();
+      const start =
+        provider === "amazon-selling-partner"
+          ? await backend.startSpApiConnect()
+          : await backend.startAdsConnect();
+      const popup = openCenteredPopup(start.url);
+      if (!popup) setPending(null); // popup blocked
+    } catch (err) {
+      // The backend's `error` sentence is written for a seller — show it.
+      setError(err instanceof Error ? err.message : String(err));
+      setPending(null);
+    }
   };
 
   const cards: Array<{
@@ -133,6 +185,12 @@ export function ConnectAmazon({ ctx }: { ctx: AppContext }) {
           sees your Amazon password.
         </p>
       </div>
+
+      {error ? (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-[12.5px] leading-relaxed text-red-700">
+          {error}
+        </p>
+      ) : null}
 
       {cards.map((c) => {
         const connected = c.state?.state === "connected";

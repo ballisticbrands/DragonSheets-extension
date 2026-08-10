@@ -22,8 +22,9 @@ import { adoptBridgeClientId } from "../analytics/client-id";
 import { flushQueue, sendEvent } from "../analytics/mp";
 import type { AnalyticsMessage } from "../analytics/track";
 import { handleGoogleSignIn } from "../auth/real";
+import { apiFetch, clearAuthToken } from "../backend/http";
 import { logDiag } from "../lib/diagnostics";
-import { MSG } from "../lib/messages";
+import { MSG, type ApiRequestMessage, type OauthResultMessage } from "../lib/messages";
 import { STORAGE_KEYS, storageGet, storageSet } from "../lib/storage";
 
 const SITE_ORIGIN = "https://go.getdragonsheets.com";
@@ -109,6 +110,22 @@ function initMessageRouter(): void {
           .then(sendResponse)
           .catch((err) => sendResponse({ ok: false, error: String(err) }));
         return true; // async response
+      case MSG.authSignOut:
+        clearAuthToken()
+          .then(() => sendResponse({ ok: true }))
+          .catch((err) => sendResponse({ ok: false, error: String(err) }));
+        return true;
+      case MSG.apiRequest: {
+        // The ONLY place the extension talks to api.getdragonbot.com. See
+        // src/backend/http.ts for why the sidebar can't do this itself.
+        const m = message as ApiRequestMessage;
+        apiFetch({ method: m.method, path: m.path, body: m.body, anonymous: m.anonymous })
+          .then(sendResponse)
+          .catch((err) =>
+            sendResponse({ ok: false, status: 0, error: String(err), errorCode: "relay_failed" })
+          );
+        return true;
+      }
       case MSG.refreshBootstrap:
         refreshBootstrap("message")
           .then(() => sendResponse({ ok: true }))
@@ -151,9 +168,80 @@ function initMessageRouter(): void {
  *  - stamp `attribution_source: "bridge"`, overriding the "direct" default
  *    written at install time
  */
+/**
+ * Tell every open sidebar that an OAuth flow just finished, so it re-reads
+ * /v1/connections without waiting for a reopen.
+ *
+ * 🚫 This fires NO analytics. Activation events come from connection STATE via
+ * `reconcileConnectionActivations()`, and that rule is not negotiable: a
+ * popup that is blocked, closed a second early, or navigated away from still
+ * leaves a real server-side connection, and a message-only path drops that
+ * conversion silently. See src/analytics/events.ts.
+ *
+ * `chrome.tabs.query({})` needs no "tabs" permission for this use (we never
+ * read tab URLs), and `tabs.sendMessage` to a tab with no listener rejects —
+ * which is the normal case for every non-Sheets tab, hence the swallowed
+ * error per tab rather than one try/catch around the loop.
+ */
+async function broadcastOauthResult(result: OauthResultMessage): Promise<void> {
+  const payload = {
+    type: MSG.oauthResultBroadcast,
+    provider: result.provider,
+    status: result.status,
+    at: Date.now(),
+  };
+  const tabs = await chrome.tabs.query({}).catch(() => []);
+  await Promise.all(
+    tabs.map(async (tab) => {
+      if (typeof tab.id !== "number") return;
+      await chrome.tabs.sendMessage(tab.id, payload).catch(() => undefined);
+    })
+  );
+}
+
+/** Success is spelled two ways across the stack; accept both, reject the rest. */
+function isOauthSuccess(status: string | undefined): boolean {
+  return status === "success" || status === "connected" || status === "ok";
+}
+
 function initExternalMessages(): void {
   chrome.runtime.onMessageExternal.addListener((message: unknown, sender, sendResponse) => {
     const msg = message as { type?: string; payload?: Record<string, unknown> } | null;
+
+    // ---- OAuth completion bounce (go.getdragonsheets.com/oauth-complete/) ----
+    if (msg?.type === MSG.oauthResult) {
+      // `externally_connectable` already restricts this channel to
+      // go.getdragonsheets.com, but re-check the sender rather than trusting
+      // the manifest alone: this handler is one edit away from being reachable
+      // from anywhere, and an attacker-supplied "connected" would at worst
+      // cost us a wasted /v1/connections read — cheap to prevent, so prevent it.
+      if (sender.origin !== SITE_ORIGIN) {
+        logDiag("oauth-result-wrong-origin", { origin: sender.origin });
+        sendResponse({ ok: false, error: "unexpected origin" });
+        return true;
+      }
+      const result = message as OauthResultMessage;
+      void (async () => {
+        try {
+          await storageSet(STORAGE_KEYS.lastOauthResult, {
+            provider: result.provider,
+            status: result.status,
+            receivedAt: Date.now(),
+          });
+          logDiag("oauth-result-received", {
+            provider: result.provider,
+            status: result.status,
+            success: isOauthSuccess(result.status),
+          });
+          await broadcastOauthResult(result);
+          sendResponse({ ok: true });
+        } catch (err) {
+          sendResponse({ ok: false, error: String(err) });
+        }
+      })();
+      return true;
+    }
+
     if (msg?.type === MSG.attribution && msg.payload !== undefined) {
       void (async () => {
         try {

@@ -1,23 +1,31 @@
 import { MockBackend } from "./mock";
+import { RealBackend } from "./real";
 import type { BackendClient } from "./types";
+
+export type BackendMode = "mock" | "real";
+
+/**
+ * THE SEAM. One environment variable decides which `BackendClient` the whole
+ * extension gets, and nothing else in the codebase is allowed to care.
+ *
+ *   VITE_BACKEND=real  → RealBackend  (api.getdragonbot.com)
+ *   anything else      → MockBackend  (default — the demo/QA path)
+ *
+ * Mock stays the default deliberately: the packaged build, the browser smoke
+ * test and every screenshot in the store listing run against it, and none of
+ * them should start depending on a live backend and a real Amazon account.
+ */
+export function getBackendMode(): BackendMode {
+  return import.meta.env.VITE_BACKEND === "real" ? "real" : "mock";
+}
 
 let instance: BackendClient | null = null;
 
-/**
- * Backend factory. `VITE_BACKEND=real` selects the (not yet implemented) real
- * client; everything defaults to the mock. Phase 8 adds RealBackend here —
- * nothing else in the codebase should care which one it gets.
- */
 export function getBackend(): BackendClient {
   if (instance) return instance;
-  const mode = import.meta.env.VITE_BACKEND === "real" ? "real" : "mock";
-  if (mode === "real") {
-    throw new Error(
-      "RealBackend is not implemented yet (DRAGONSHEETS_PLAN.md Phase 8). Build without VITE_BACKEND=real."
-    );
-  }
-  instance = new MockBackend();
+  instance = getBackendMode() === "real" ? new RealBackend() : new MockBackend();
   return instance;
 }
 
 export type { BackendClient } from "./types";
+export { NotImplementedYetError } from "./real";

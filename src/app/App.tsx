@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { reconcileConnectionActivations, trackSidebarOpened } from "../analytics";
-import { getBackend } from "../backend";
+import { getBackend, getBackendMode } from "../backend";
 import type { Session } from "../backend/types";
 import { sidebarStore } from "../content/sidebar-store";
 import { getSpreadsheetId, type SelectorMap } from "../content/selector-map";
@@ -231,9 +231,13 @@ export function SidebarApp({ selectors }: { selectors: SelectorMap }) {
           <Screen route={route} ctx={ctx} />
         )}
       </div>
-      <div className="border-t border-gray-100 px-4 py-2 text-center text-[11px] text-ink/30">
-        Mock mode — no data leaves this browser yet
-      </div>
+      {/* Mode banner. It disappears in real mode rather than lying about
+          where the data comes from — the seam is src/backend/index.ts. */}
+      {getBackendMode() === "mock" ? (
+        <div className="border-t border-gray-100 px-4 py-2 text-center text-[11px] text-ink/30">
+          Mock mode — no data leaves this browser yet
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Amazon connection — DragonSheets</title>
+    <meta name="description" content="Amazon connection result for DragonSheets." />
+    <link rel="stylesheet" href="/assets/site.css" />
+    <meta name="robots" content="noindex" />
+    <style>
+      /* This page is a two-second waypoint, not a destination: centre it and
+         keep it to one sentence the seller can act on. */
+      .wrap { max-width: 480px; padding-top: 88px; text-align: center; }
+      h1 { font-size: 24px; margin: 28px 0 10px; }
+      .state { font-size: 40px; line-height: 1; }
+      .detail { font-size: 13px; color: rgba(26, 26, 26, 0.45); margin-top: 14px; }
+      .hint { margin-top: 28px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <a class="logo" href="/"><span class="mark">DS</span><span class="word">DragonSheets</span></a>
+      <div class="state" id="state" aria-hidden="true">⏳</div>
+      <h1 id="headline">Finishing up…</h1>
+      <p id="body">One moment.</p>
+      <p class="detail" id="detail" hidden></p>
+      <p class="hint muted" id="hint" hidden></p>
+      <footer>© Ballistic Brands · <a href="/privacy/">Privacy policy</a></footer>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         THE OAUTH COMPLETION BOUNCE (docs/EXTENSION_API.md → M2)
+         ══════════════════════════════════════════════════════════════════
+
+         Amazon's consent flow ends on sellerconnect's callback, which
+         provisions the Connection and then bounces the popup HERE. This page
+         exists for one reason: `chrome-extension://` is not somewhere a
+         browser can be redirected, and `postMessage`-ing an OAuth result into
+         the docs.google.com origin would let any page script on that tab read
+         it. So the result lands on an origin we own, which the extension
+         manifest lists under `externally_connectable`, and this page hands it
+         over with chrome.runtime.sendMessage(EXTENSION_ID, …).
+
+         ⚠️ What this message is NOT: an analytics trigger. The extension fires
+         `connect_amazon` from connection STATE (reconcileConnectionActivations),
+         never from this hop — a seller who closes the popup one second early
+         still has a real connection, and a message-only path would drop that
+         conversion silently. This is a "go re-check now" nudge, nothing more.
+         See src/analytics/events.ts.
+
+         Parameter shapes accepted (be liberal — the backend's callback has
+         used both spellings over its life):
+           · ?status=success|error&provider=amazon-selling-partner|amazon-ads
+           · ?spapi=connected|error   /  ?adsapi=connected|error
+             (+ optional connection_id, detail)
+
+         Debug it: append `?debug=1`. Nothing is sent; the payload that WOULD
+         be sent is logged and rendered instead.
+         ══════════════════════════════════════════════════════════════════ -->
+    <script>
+      (function () {
+        // Chrome Web Store item ID. Same constant as /installed/.
+        var DRAGONSHEETS_EXTENSION_ID = "papoimmliahhmamjdagmajeddimpmojo";
+
+        var q = new URLSearchParams(location.search);
+        var DEBUG = q.get("debug") === "1";
+
+        function log(event, data) {
+          try {
+            console.info("[dragonsheets-oauth] " + JSON.stringify(
+              Object.assign({ event: event }, data || {})
+            ));
+          } catch (e) {}
+        }
+
+        /** Normalise every spelling the callback has ever used into one shape. */
+        function readResult() {
+          var provider = q.get("provider");
+          var status = q.get("status");
+
+          // Legacy/dashboard spelling: the provider is the KEY, the status is
+          // the value. `spapi=connected` and `adsapi=error`.
+          if (!provider || !status) {
+            if (q.has("spapi")) {
+              provider = provider || "amazon-selling-partner";
+              status = status || q.get("spapi");
+            } else if (q.has("adsapi")) {
+              provider = provider || "amazon-ads";
+              status = status || q.get("adsapi");
+            }
+          }
+          return {
+            provider: provider || undefined,
+            status: status || undefined,
+            connectionId: q.get("connection_id") || undefined,
+            detail: q.get("detail") || undefined
+          };
+        }
+
+        function isSuccess(status) {
+          return status === "success" || status === "connected" || status === "ok";
+        }
+
+        function providerLabel(provider) {
+          if (!provider) return "Your Amazon account";
+          return provider.indexOf("ads") !== -1 ? "Amazon Ads" : "Seller Central";
+        }
+
+        function render(result, delivered) {
+          var el = {
+            state: document.getElementById("state"),
+            headline: document.getElementById("headline"),
+            body: document.getElementById("body"),
+            detail: document.getElementById("detail"),
+            hint: document.getElementById("hint")
+          };
+          var label = providerLabel(result.provider);
+
+          if (isSuccess(result.status)) {
+            el.state.textContent = "✅";
+            el.headline.textContent = label + " is connected.";
+            el.body.textContent = "You can close this tab and go back to your spreadsheet.";
+          } else if (result.status) {
+            el.state.textContent = "⚠️";
+            el.headline.textContent = "That didn't go through.";
+            el.body.textContent =
+              label + " wasn't connected. Close this tab and try again from the DragonSheets panel.";
+          } else {
+            // No params at all — somebody opened the URL directly.
+            el.state.textContent = "🔗";
+            el.headline.textContent = "Nothing to finish here.";
+            el.body.textContent =
+              "Open a Google Sheet and start the Amazon connection from the DragonSheets panel.";
+          }
+
+          if (result.detail) {
+            el.detail.textContent = result.detail;
+            el.detail.hidden = false;
+          }
+
+          // Graceful degradation: this page must read sensibly for someone who
+          // does not have the extension (a shared link, a different browser, a
+          // profile without it). Never leave them staring at a spinner.
+          if (result.status && !delivered) {
+            el.hint.textContent =
+              "DragonSheets didn't pick this up automatically — reopen the panel in your spreadsheet and it will refresh.";
+            el.hint.hidden = false;
+          }
+        }
+
+        function send(result, done) {
+          if (!(window.chrome && chrome.runtime && chrome.runtime.sendMessage)) {
+            log("undeliverable", { reason: "no-chrome-runtime" });
+            done(false);
+            return;
+          }
+          try {
+            chrome.runtime.sendMessage(
+              DRAGONSHEETS_EXTENSION_ID,
+              {
+                type: "ds-oauth-result",
+                provider: result.provider,
+                status: result.status,
+                connectionId: result.connectionId,
+                detail: result.detail
+              },
+              function (response) {
+                // "Could not establish connection / Receiving end does not
+                // exist" is the NORMAL answer when the extension isn't
+                // installed. Reading lastError suppresses Chrome's
+                // unchecked-error console noise.
+                var err = chrome.runtime.lastError;
+                log(err ? "send-failed" : "sent", { error: err ? err.message : undefined });
+                done(!err && !!(response && response.ok));
+              }
+            );
+          } catch (e) {
+            log("send-threw", { error: String(e) });
+            done(false);
+          }
+        }
+
+        var result = readResult();
+        log("parsed", result);
+
+        if (DEBUG) {
+          log("debug-mode", { wouldSendTo: DRAGONSHEETS_EXTENSION_ID });
+          render(result, true);
+          return;
+        }
+        if (!result.status) {
+          render(result, true); // direct visit — nothing to deliver
+          return;
+        }
+        send(result, function (delivered) {
+          render(result, delivered);
+        });
+      })();
+    </script>
+  </body>
+</html>

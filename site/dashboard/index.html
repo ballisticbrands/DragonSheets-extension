@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Amazon connection — DragonSheets</title>
+    <link rel="stylesheet" href="/assets/site.css" />
+    <meta name="robots" content="noindex" />
+  </head>
+  <body>
+    <!-- ══════════════════════════════════════════════════════════════════
+         COMPATIBILITY SHIM — not a dashboard. DragonSheets has no web app.
+         ══════════════════════════════════════════════════════════════════
+
+         sellerconnect's OAuth callback builds its fallback URL as
+         `${return_to}/dashboard?spapi=connected&…` (src/lib/oauth-callback-html.ts
+         → `fallbackUrl()`), which is right for the three SPA brands and wrong
+         for this one: DragonSheets' `return_to` is go.getdragonsheets.com, a
+         static site whose OAuth waypoint lives at /oauth-complete/.
+
+         Rather than let a successful Amazon connection dead-end on a 404, this
+         page forwards to /oauth-complete/ with the query string intact. That
+         page understands the `spapi=` / `adsapi=` spelling as well as the
+         documented `status=` / `provider=` one.
+
+         DELETE ME once sellerconnect sends DragonSheets straight to
+         /oauth-complete/ per docs/EXTENSION_API.md. Until then this is the
+         only thing standing between a real connection and a broken-looking
+         one — `replace()` keeps it out of the back-button history.
+         ══════════════════════════════════════════════════════════════════ -->
+    <script>
+      (function () {
+        var target = "/oauth-complete/" + (location.search || "");
+        try {
+          location.replace(target);
+        } catch (e) {
+          location.href = target;
+        }
+      })();
+    </script>
+    <noscript>
+      <div class="wrap">
+        <a class="logo" href="/"><span class="mark">DS</span><span class="word">DragonSheets</span></a>
+        <h1>Almost there.</h1>
+        <p><a href="/oauth-complete/">Continue</a> to finish connecting Amazon.</p>
+      </div>
+    </noscript>
+  </body>
+</html>
