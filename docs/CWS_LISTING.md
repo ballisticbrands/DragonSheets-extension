@@ -72,47 +72,78 @@ with our service account, and that is the only file we can read or write.
 
 ---
 
-## Privacy practices (the section that stalls reviews)
+## Privacy practices tab — fill EVERY box below
 
-**Single purpose** (one sentence, must be genuinely singular)
+> These are console form fields. Having them written here does **not** fill them in — the
+> submit button stays blocked until each box below has text in it. Work top to bottom; the
+> headings match the form's own labels.
+
+### 1. Single purpose
 ```
-DragonSheets imports a user's Amazon Seller Central and Amazon Advertising data into their
-Google Sheets spreadsheet and keeps it refreshed on a schedule.
+DragonSheets imports a user's Amazon Seller Central and Amazon Advertising data into their Google Sheets spreadsheet and keeps it refreshed on a schedule.
 ```
 
-**Permission justifications** — one per requested permission. Keep these literal; reviewers
-compare them against actual code.
+### 2. Permission justifications — one box per permission
 
-| Permission | Justification to paste |
+**`storage`**
+```
+Stores the user's sign-in session, their sync configurations, and onboarding progress locally in the browser, so the extension keeps working across spreadsheet tabs and browser restarts.
+```
+
+**`alarms`**
+```
+Schedules two periodic background tasks: refreshing the extension's configuration file, and retrying analytics events that failed while the browser was offline. Manifest V3 terminates service workers frequently, so setTimeout/setInterval do not survive; chrome.alarms is the only reliable option.
+```
+
+**`identity`**
+```
+Used only for "Sign in with Google" via chrome.identity.launchWebAuthFlow, requesting just the openid, email and profile scopes to create the user's DragonSheets account. No Google Drive or Google Sheets scopes are requested.
+```
+
+### 3. Host permission justification — ONE box for all three hosts
+
+⚠️ The console asks for a single host-permission justification, not one per host. Paste this
+whole paragraph:
+```
+The extension requests three hosts, each required for core functionality. https://docs.google.com/* is required because the extension's entire user interface is a panel injected into the Google Sheets page; without it there is no product. https://api.getdragonbot.com/* is our API server, which stores the user's Amazon connection and returns the report data they asked to import. https://*.getdragonsheets.com/* is our own domain, used to fetch the extension's configuration file and to receive install attribution from our post-install page. No other hosts are accessed.
+```
+
+### 4. Remote code use
+
+Select **"No, I am not using remote code."** Justification:
+```
+All JavaScript is bundled inside the extension package. The extension loads no external scripts, evaluates no strings as code, and its content security policy permits scripts only from the package itself.
+```
+
+### 5. Data usage — tick exactly these
+
+| Data type | Tick? |
 |---|---|
-| `storage` | Stores the user's sign-in session, their sync configurations, and UI state (such as which onboarding steps are complete) locally in the browser so the extension works across spreadsheet tabs and browser restarts. |
-| `alarms` | Schedules two periodic background tasks: refreshing the extension's configuration file and retrying analytics events that failed while the browser was offline. Service workers are terminated frequently in Manifest V3, so timers are not a viable alternative. |
-| `identity` | Used solely for "Sign in with Google" via `chrome.identity.launchWebAuthFlow`, requesting only the `openid`, `email` and `profile` scopes to create the user's DragonSheets account. No Google Drive or Sheets scopes are requested. |
-| Host: `https://*.getdragonsheets.com/*` | The extension's own backend and static site. Used to fetch configuration and to receive install attribution from our post-install page. |
-| Host: `https://api.getdragonbot.com/*` | Our API server, which holds the user's Amazon connection and returns their report data. |
-| Host: `https://docs.google.com/*` | Required to inject the DragonSheets panel into the Google Sheets interface, which is the extension's entire user interface. |
-| Remote code | **No.** All code ships inside the package. The extension loads no remote scripts, and its content security policy forbids them. |
+| Personally identifiable information (name, email) | ✅ |
+| Authentication information | ✅ |
+| Financial and payment information | ✅ |
+| Health / personal communications / location / web history / user activity | ❌ leave unticked |
 
-**Data usage declarations** — tick these and no others:
+Then tick **all three certifications** (all are true for us):
+- I do not sell or transfer user data to third parties, outside of approved use cases
+- I do not use or transfer user data for purposes unrelated to my item's single purpose
+- I do not use or transfer user data to determine creditworthiness or for lending purposes
 
-| Data type | Collected | Why |
-|---|---|---|
-| Personally identifiable information | ✅ | Email address and name from Google sign-in, used to create and identify the account. |
-| Authentication information | ✅ | OAuth tokens for the user's Google and Amazon connections, used only to access the data they explicitly connect. |
-| Financial and payment information | ✅ | Amazon sales, fees and advertising spend — the business data the user asks us to import. |
-| Health, personal communications, location, web history, user activity | ❌ | Not collected. |
-
-**Three required certifications** — all true for us, tick all three:
-- Not being sold to third parties
-- Not being used for purposes unrelated to the item's single purpose
-- Not being used to determine creditworthiness or for lending
-
-**Privacy policy URL**
+### 6. Privacy policy URL
 ```
 https://go.getdragonsheets.com/privacy/
 ```
 
 ---
+
+## Account Settings tab — two things that block publishing
+
+These are **publisher-level**, not item-level, which is why they read oddly next to the item
+errors. Developer console → **Settings** (left sidebar, under the account, not the item):
+
+1. **Contact email** — enter `owner@ballisticbrands.co`.
+2. **Verify it** — Google sends a confirmation mail; click the link. Publishing stays blocked
+   until it shows as verified, and the mail sometimes lands in spam.
 
 ## Graphical assets — ✅ READY (2026-08-10)
 
