@@ -23,10 +23,17 @@
          page understands the `spapi=` / `adsapi=` spelling as well as the
          documented `status=` / `provider=` one.
 
-         DELETE ME once sellerconnect sends DragonSheets straight to
-         /oauth-complete/ per docs/EXTENSION_API.md. Until then this is the
-         only thing standing between a real connection and a broken-looking
-         one — `replace()` keeps it out of the back-button history.
+         STATUS 2026-08-10: the backend fix is written and tested
+         (sellerconnect commit fdc350d — BrandConfig.oauthCompletionPath makes
+         the callback 302 straight here) but is NOT YET DEPLOYED to the VPS.
+
+         So this page stays until that deploy ships. Deleting it before then
+         re-breaks the exact case it exists for: the live callback still
+         bounces to `${return_to}/dashboard?spapi=connected`, which without
+         this file is a 404 on a connection that actually succeeded.
+         `replace()` keeps it out of the back-button history.
+
+         DELETE ME in the first commit after that deploy is verified live.
          ══════════════════════════════════════════════════════════════════ -->
     <script>
       (function () {
