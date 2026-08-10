@@ -148,11 +148,11 @@ publish.
 
 ## Submission checklist
 
-1. [ ] CWS developer account registered ($5 one-time), publisher email verified
+1. [x] CWS developer account registered ($5 one-time) — done 2026-08-10
 2. [ ] `npm run zip` → `release/dragonsheets-extension-v0.1.0.zip`
 3. [ ] Upload zip, set **Visibility: Unlisted**
 4. [ ] Paste name / summary / description / category from above
-5. [ ] Upload icon + at least one screenshot
+5. [x] Screenshots ready — upload all five from `store-assets/` in the numbered order, plus the 128px icon
 6. [ ] Fill single purpose + permission justifications + data declarations above
 7. [ ] Privacy policy URL
 8. [ ] Submit; expect days, not hours, for first review
