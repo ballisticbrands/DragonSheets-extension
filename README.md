@@ -6,8 +6,11 @@ First extension product in the fleet. Landing page lives in
 `DragonSheets-LP` (separate repo, `getdragonsheets.com`); this repo's GitHub
 Pages serves the companion site at **go.getdragonsheets.com**.
 
-> Backend is deferred (DRAGONSHEETS_PLAN Phase 8). Everything runs against a
-> mocked, typed `BackendClient` — see "Mock mode" below.
+> **Mock is the default build.** M1 (real Google sign-in) and M2 (real Amazon
+> connect) are implemented against sellerconnect and selected with
+> `VITE_BACKEND=real VITE_AUTH_MODE=real` — see "Real mode" below. Everything
+> the sync loop needs (`/v1/sheets/…`) is still M3 and deliberately throws
+> `NotImplementedYet` in real mode rather than faking data.
 
 ## Dev loop
 
@@ -25,14 +28,20 @@ extension's reload button in `chrome://extensions`, then reload the Sheets tab.
 Other commands:
 
 ```bash
-npm run typecheck    # tsc --noEmit (strict)
-npm run zip          # dist/ → release/dragonsheets-extension-v<version>.zip
-npm run icons        # regenerate placeholder icons (pure-node PNG encoder)
+npm run typecheck      # tsc --noEmit (strict)
+npm run test:analytics # GA4 payload / dedupe / queue harness (no network)
+npm run test:unit      # auth + RealBackend harness (stubbed fetch, no network)
+npm run test:browser   # Playwright smoke test of the PACKAGED dist/ (mock mode)
+npm run zip            # dist/ → release/dragonsheets-extension-v<version>.zip
+npm run icons          # regenerate placeholder icons (pure-node PNG encoder)
 ```
+
+`test:browser` needs Playwright, which is deliberately not a dependency:
+`npm i -D --no-save playwright && npx playwright install chromium`.
 
 ## Mock mode
 
-The default (and currently only) build is fully mocked:
+The default build is fully mocked:
 
 - **Backend**: `src/backend/types.ts` defines the `BackendClient` interface
   (auth, sheet access, Amazon connect + linked accounts, sync CRUD/run
@@ -41,18 +50,11 @@ The default (and currently only) build is fully mocked:
   `src/backend/mock.ts` implements it with realistic latencies and state
   persisted in `chrome.storage.local`; `src/backend/catalog.ts` holds the
   static report catalog (14 reports) and the 6 solution templates.
-  `getBackend()` (`src/backend/index.ts`) returns the mock; a
-  `VITE_BACKEND=real` build will select the Phase-8 real client.
-- **Auth**: mock mode signs in instantly with a fake profile. The real path
-  (`chrome.identity.launchWebAuthFlow`, service-worker side) is wired but
-  dormant — `GOOGLE_OAUTH_CLIENT_ID` in `src/auth/config.ts` is `null`
-  (TODO(user-task): create the GCP OAuth client). Build with
-  `VITE_AUTH_MODE=real` once configured.
+  `getBackend()` (`src/backend/index.ts`) is the seam: `VITE_BACKEND=real`
+  selects `RealBackend`, anything else the mock.
+- **Auth**: mock mode signs in instantly with a fake profile.
 - **Amazon connect**: the consent popup is `mock-oauth.html`, which
-  auto-succeeds and posts the same `dragonbot-oauth-result` message the real
-  consent callback will post. Phase 8 swaps the popup URL for
-  `POST /v1/connect/amazon-selling-partner/start`; the sidebar listener
-  doesn't change.
+  auto-succeeds and posts a `dragonbot-oauth-result` message to its opener.
 - **Feature screens** run entirely against the mock: the sync wizard writes
   real `Sync` records, "Run now" produces run history and row counts, the
   agent returns keyword-routed answers (some carrying an applyable proposal),
@@ -60,6 +62,51 @@ The default (and currently only) build is fully mocked:
   formulas are parsed, validated and previewed client-side by
   `src/lib/formula.ts` — no `eval`, MV3 CSP-safe.
 - "Sign out" on the settings page clears all mock state.
+
+## Real mode (M1 + M2)
+
+```bash
+VITE_BACKEND=real VITE_AUTH_MODE=real npm run build
+```
+
+Contract: `sellerconnect/docs/EXTENSION_API.md`. Base URL
+`https://api.getdragonbot.com`, brand `dragonsheets`, extension id
+`papoimmliahhmamjdagmajeddimpmojo`.
+
+**Everything goes through the service worker.** `RealBackend` runs inside a
+content script on `docs.google.com`; it holds no `host_permissions` and never
+sees the session token. It posts `MSG.apiRequest` and `src/backend/http.ts`
+does the networking, attaching `Authorization: Bearer sc_live_…`.
+
+**M1 — sign-in** (`src/auth/real.ts`, service-worker side):
+
+1. `chrome.identity.launchWebAuthFlow` → Google, `response_type=id_token`,
+   `scope=openid email profile`, CSPRNG `nonce`, redirect
+   `https://papoimmliahhmamjdagmajeddimpmojo.chromiumapp.org/oauth2`.
+2. ID token read from the URL **fragment**, nonce/`aud`/`iss`/`exp` checked
+   client-side (`src/auth/id-token.ts`); the signature is the backend's job.
+3. `POST /v1/auth/google { credential, attribution }` — the attribution blob
+   the bridge page delivered rides along, because that request is the only
+   moment sellerconnect can record where a signup came from.
+4. The `sc_live_…` bearer is stored by the SW and never leaves it.
+
+> ⚠️ **Unverified:** whether Google honours the implicit `id_token` grant for
+> this OAuth client. It cannot be exercised headlessly — a human has to sign in
+> once. A fallback (auth code + PKCE, exchanged by the backend) is implemented
+> behind `GOOGLE_RESPONSE_TYPE` in `src/auth/config.ts`, with the switching
+> criteria and the backend work it needs written down there.
+
+**M2 — Amazon connect**: `POST /v1/connect/…/start { return_to }` →
+`window.open(authorization_url)` → Amazon consent → backend callback → bounce
+to `https://go.getdragonsheets.com/oauth-complete/` (`site/oauth-complete/`),
+which is `externally_connectable` and messages the service worker
+(`ds-oauth-result`); the SW re-broadcasts to open sidebars, which re-read
+`/v1/connections`.
+
+> 🚫 Activation analytics (`connect_amazon`) still come **only** from
+> `reconcileConnectionActivations()` reading connection state. The bounce
+> message is a "go re-check now" nudge and fires nothing. See
+> `src/analytics/events.ts`.
 
 ### Deep links (`dsr=`)
 

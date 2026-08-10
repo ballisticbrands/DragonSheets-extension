@@ -10,6 +10,7 @@
     "icons": "node scripts/generate-icons.mjs",
     "typecheck": "tsc --noEmit",
     "test:analytics": "node scripts/run-analytics-harness.mjs",
+    "test:unit": "node scripts/run-unit-harness.mjs",
     "zip": "node scripts/zip-extension.mjs",
     "test:browser": "node test/browser/smoke.mjs"
   },

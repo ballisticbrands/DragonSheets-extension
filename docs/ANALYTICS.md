@@ -134,11 +134,20 @@ logged — deduped per connection id in `chrome.storage.local` under
 `dragonsheets_activations_v1` (same shape as `frontend-shared`'s
 `dragonbot_activations_v1`).
 
-The OAuth popup's `postMessage` deliberately fires **nothing**. When that
-popup is blocked, closed a second early, or the user navigates back by hand,
-the connection still succeeds server-side — and a postMessage-only path loses
-the conversion silently. That is exactly how DragonReply lost its first real
-connection. Do not reintroduce a direct fire in the popup handler.
+Three things can *nudge* a re-check, and **none of them fires an event**:
+
+| Nudge | Where |
+|---|---|
+| the mock popup's `postMessage` | `src/app/routes/ConnectAmazon.tsx` |
+| `ds-oauth-result` from `go.getdragonsheets.com/oauth-complete/`, re-broadcast by the service worker | `src/background/service-worker.ts` → `broadcastOauthResult()` |
+| the sheet tab regaining focus | `src/app/routes/ConnectAmazon.tsx` |
+
+Each one re-reads connections and calls `reconcileConnectionActivations()`;
+the reconciler decides whether anything fires. When a popup is blocked, closed
+a second early, or navigated back from by hand, the connection still succeeds
+server-side — and a message-only path loses the conversion silently. That is
+exactly how DragonReply lost its first real connection. Do not reintroduce a
+direct fire in any of these handlers.
 
 There is also a **7-day recency gate**: the dedupe list is local storage and
 is empty on a machine the user has not installed on before. Without the gate,
