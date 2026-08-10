@@ -15,6 +15,23 @@ export const STORAGE_KEYS = {
   /** Attribution blob delivered by go.getdragonsheets.com via externally_connectable. */
   attribution: "ds:attribution",
 
+  // ---------- real auth (src/auth/*, src/backend/real.ts) ----------
+  /**
+   * `{ token, expiresAt }` — the `sc_live_…` bearer minted by
+   * POST /v1/auth/google. Written and read ONLY by the service worker; the
+   * sidebar never sees it (it relays calls through MSG.apiRequest instead),
+   * which keeps the token out of the docs.google.com-hosted content script.
+   */
+  authToken: "ds:auth-token",
+  /**
+   * `{ nonce, verifier?, createdAt }` — the single-use OAuth nonce (and, on
+   * the PKCE fallback path, the code verifier). Written just before
+   * launchWebAuthFlow and consumed the moment the ID token comes back.
+   */
+  authOauthState: "ds:auth-oauth-state",
+  /** Last `ds-oauth-result` the bounce page delivered — diagnostics only. */
+  lastOauthResult: "ds:last-oauth-result",
+
   // ---------- analytics (src/analytics/*) ----------
   /** `{ id, source }` — the GA4 client_id and where it came from ("bridge" | "minted"). */
   gaClientId: "ds:ga-client-id",
