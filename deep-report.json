@@ -1,0 +1,55 @@
+{
+  "trail": [
+    {
+      "click": "sign-in",
+      "ok": true
+    },
+    {
+      "entryScreenFocusables": [
+        "BUTTON:Settings",
+        "BUTTON:×",
+        "BUTTON:Solve with AIRecommendedTell i",
+        "BUTTON:TemplatesP&L by SKU, TACOS das",
+        "BUTTON:New Live Data SyncPick a repor",
+        "BUTTON:Skip for now → Home"
+      ]
+    },
+    {
+      "click": "open-agent",
+      "ok": true
+    },
+    {
+      "agentText": "DSDragonSheetsSettings×‹ HomeSolve with AINo Amazon account is linked yet, so the agent is answering from the report catalog alone. Connect AmazonDescribe the s"
+    },
+    {
+      "click": "back-home-1",
+      "ok": true
+    },
+    {
+      "click": "open-templates",
+      "ok": true
+    },
+    {
+      "templatesText": "DSDragonSheetsSettings×‹ HomeTemplatesSheets other Amazon sellers already asked for. Every one is a normal sync — edit it after.AllProfitabilityAdvertisingInven"
+    },
+    {
+      "click": "back-home-2",
+      "ok": true
+    },
+    {
+      "click": "open-syncs",
+      "ok": true
+    },
+    {
+      "syncsText": "DSDragonSheetsSettings×‹ HomeLive Data SyncsEach sync owns a tab in this spreadsheet and keeps it current on its own.No syncs yetPick your reports and columns o"
+    },
+    {
+      "click": "open-wizard",
+      "ok": true
+    },
+    {
+      "wizardText": "DSDragonSheetsSettings×‹ SyncsAccounts & marketplacesWhich Amazon accounts and marketplaces this sync reads from.No Amazon account linked yetA sync pulls from Seller Central or Amazon Ads — connect on"
+    }
+  ],
+  "errors": []
+}
