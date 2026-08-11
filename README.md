@@ -8,7 +8,7 @@ Pages serves the companion site at **go.getdragonsheets.com**.
 
 > **Mock is the default build.** M1 (real Google sign-in) and M2 (real Amazon
 > connect) are implemented against sellerconnect and selected with
-> `VITE_BACKEND=real VITE_AUTH_MODE=real` — see "Real mode" below. Everything
+> `VITE_BACKEND=real` — see "Real mode" below. Everything
 > the sync loop needs (`/v1/sheets/…`) is still M3 and deliberately throws
 > `NotImplementedYet` in real mode rather than faking data.
 
@@ -66,7 +66,7 @@ The default build is fully mocked:
 ## Real mode (M1 + M2)
 
 ```bash
-VITE_BACKEND=real VITE_AUTH_MODE=real npm run build
+VITE_BACKEND=real npm run build
 ```
 
 Contract: `sellerconnect/docs/EXTENSION_API.md`. Base URL

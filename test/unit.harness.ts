@@ -649,6 +649,36 @@ async function testSeam(): Promise<void> {
     getBackend().constructor.name === "MockBackend",
     getBackend().constructor.name
   );
+
+  // ─── auth mode follows the backend ──────────────────────────────────────
+  // Regression: on 2026-08-11 the first live sign-in failed with "signed in,
+  // but the session didn't stick" because the build set VITE_BACKEND=real and
+  // left VITE_AUTH_MODE unset. Mock auth then never ran the OAuth flow, so the
+  // real backend was asked to read a session that was never created — and
+  // nothing reached the server at all, which made it look like a network bug.
+  const { resolveAuthMode } = await import("../src/auth/index");
+
+  check(
+    "unset + real backend ⇒ REAL auth (the bug: this used to be mock)",
+    resolveAuthMode(undefined, "real") === "real",
+    resolveAuthMode(undefined, "real")
+  );
+  check(
+    "unset + mock backend ⇒ mock auth",
+    resolveAuthMode(undefined, "mock") === "mock"
+  );
+  check(
+    "explicit real overrides a mock backend",
+    resolveAuthMode("real", "mock") === "real"
+  );
+  check(
+    "explicit mock still forces mock against a real backend (escape hatch)",
+    resolveAuthMode("mock", "real") === "mock"
+  );
+  check(
+    "an unrecognised value falls back to following the backend",
+    resolveAuthMode("yes-please", "real") === "real"
+  );
 }
 
 // ─── run ──────────────────────────────────────────────────────────────────
