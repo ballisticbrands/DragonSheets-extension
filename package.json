@@ -6,7 +6,7 @@
   "description": "DragonSheets Chrome extension - Amazon Seller Central + Ads data in Google Sheets.",
   "scripts": {
     "dev": "vite build --watch --mode development",
-    "build": "npm run icons && vite build",
+    "build": "npm run icons && vite build && node scripts/write-build-info.mjs",
     "icons": "node scripts/generate-icons.mjs",
     "typecheck": "tsc --noEmit",
     "test:analytics": "node scripts/run-analytics-harness.mjs",

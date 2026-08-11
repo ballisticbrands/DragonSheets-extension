@@ -37,14 +37,22 @@ const FIXTURE=fs.readFileSync(new URL('./sheets-fixture.html',import.meta.url),'
 const errors=[], trail=[];
 // This harness drives the MOCK build: real mode routes sign-in through Google
 // OAuth, which cannot complete headlessly, so every step after the sign-in
-// click legitimately fails. Fail loudly here rather than let that read as a
+// click legitimately fails. Fail loudly rather than let that read as a
 // regression (it did, briefly, on 2026-08-11).
 {
-  const sw = fs.readFileSync(new URL('../../dist/assets/service-worker.js', import.meta.url), 'utf8');
-  if (sw.includes('launchWebAuthFlow')) {
+  let mode = "unknown";
+  try {
+    mode = JSON.parse(
+      fs.readFileSync(new URL("../../dist/build-info.json", import.meta.url), "utf8"),
+    ).backend;
+  } catch {
+    console.error("dist/build-info.json missing — run `npm run build` first.");
+    process.exit(1);
+  }
+  if (mode !== "mock") {
     console.error(
-      'dist/ is a REAL-mode build (launchWebAuthFlow is bundled).\n' +
-      'This smoke test needs the mock build:  npm run build\n'
+      `dist/ was built with backend=${mode}. This smoke test needs the mock build:\n` +
+        "  npm run build\n",
     );
     process.exit(1);
   }
