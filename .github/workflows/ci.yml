@@ -27,6 +27,13 @@ jobs:
       - name: Analytics harness
         run: npm run test:analytics
 
+      # The manifest `key` pins the extension ID to the Web Store item's.
+      # Without it an unpacked build gets a path-derived ID and OAuth dies on
+      # redirect_uri_mismatch (2026-08-11). Cheap to assert, expensive to
+      # rediscover.
+      - name: Extension ID is pinned
+        run: npm run pin-id -- --verify
+
       - name: Build
         run: npm run build
 

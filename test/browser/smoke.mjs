@@ -35,6 +35,21 @@ import fs from 'node:fs';
 const EXT=new URL('../../dist', import.meta.url).pathname;
 const FIXTURE=fs.readFileSync(new URL('./sheets-fixture.html',import.meta.url),'utf8');
 const errors=[], trail=[];
+// This harness drives the MOCK build: real mode routes sign-in through Google
+// OAuth, which cannot complete headlessly, so every step after the sign-in
+// click legitimately fails. Fail loudly here rather than let that read as a
+// regression (it did, briefly, on 2026-08-11).
+{
+  const sw = fs.readFileSync(new URL('../../dist/assets/service-worker.js', import.meta.url), 'utf8');
+  if (sw.includes('launchWebAuthFlow')) {
+    console.error(
+      'dist/ is a REAL-mode build (launchWebAuthFlow is bundled).\n' +
+      'This smoke test needs the mock build:  npm run build\n'
+    );
+    process.exit(1);
+  }
+}
+
 const ctx=await chromium.launchPersistentContext('',{headless:true,channel:'chromium',
  args:[`--disable-extensions-except=${EXT}`,`--load-extension=${EXT}`],viewport:{width:1280,height:800}});
 ctx.on('console',m=>{if(m.type()==='error')errors.push('console: '+m.text())});

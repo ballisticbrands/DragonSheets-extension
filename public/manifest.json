@@ -25,29 +25,45 @@
     "service_worker": "assets/service-worker.js",
     "type": "module"
   },
-  "permissions": ["storage", "alarms", "identity"],
+  "permissions": [
+    "storage",
+    "alarms",
+    "identity"
+  ],
   "host_permissions": [
     "https://*.getdragonsheets.com/*",
     "https://api.getdragonbot.com/*"
   ],
   "content_scripts": [
     {
-      "matches": ["https://docs.google.com/spreadsheets/*"],
-      "js": ["content-loader.js"],
+      "matches": [
+        "https://docs.google.com/spreadsheets/*"
+      ],
+      "js": [
+        "content-loader.js"
+      ],
       "run_at": "document_end"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["assets/*", "mock-oauth.html"],
-      "matches": ["https://docs.google.com/*"],
+      "resources": [
+        "assets/*",
+        "mock-oauth.html"
+      ],
+      "matches": [
+        "https://docs.google.com/*"
+      ],
       "use_dynamic_url": false
     }
   ],
   "externally_connectable": {
-    "matches": ["https://go.getdragonsheets.com/*"]
+    "matches": [
+      "https://go.getdragonsheets.com/*"
+    ]
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://*.getdragonsheets.com https://api.getdragonbot.com https://www.googleapis.com https://www.google-analytics.com"
-  }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApRb70AuW0H0+uCyN5Doo6jfPM4xzWalP50lMFcRtsMwT4Ej5So/tiBA38JDgs518Lo3CGLbr/7mvleNRtBLR3HXDYZuTIinTsowsHVtnTZbPvD+F+fRlRayNNvBO5mP7X6iuNJDSHo2UzDZIv/eVhcKI8T6JjGTFZiEGhOkGwdj7z1dLmpYTs2DzilQySAsWFjlVBdPxeYeOZEbkqNWfIYE0IfBrTUyWd41pLoS2FC/qSKR7HrP3jGr+UqY2BjyYgx4m3raqFA8KPBj+fbcYG9VgxIoAdDMk7B5u0bDSvFjtTE2dh3c7BdmwhFjpnJpU9toagHVI08HaB8CJKTJ1JwIDAQAB"
 }
