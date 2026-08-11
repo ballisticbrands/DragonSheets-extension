@@ -12,7 +12,8 @@
     "test:analytics": "node scripts/run-analytics-harness.mjs",
     "test:unit": "node scripts/run-unit-harness.mjs",
     "zip": "node scripts/zip-extension.mjs",
-    "test:browser": "node test/browser/smoke.mjs"
+    "test:browser": "node test/browser/smoke.mjs",
+    "pin-id": "node scripts/pin-extension-id.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
