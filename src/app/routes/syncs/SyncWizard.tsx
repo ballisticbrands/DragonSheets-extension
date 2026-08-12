@@ -88,23 +88,37 @@ export function SyncWizard({ ctx, params }: { ctx: AppContext; params: Record<st
     let alive = true;
     void (async () => {
       const backend = getBackend();
-      const [r, a, u] = await Promise.all([
+      // `allSettled`, not `all`: any one of these rejecting used to leave the
+      // wizard on its boot spinner forever with an unhandled rejection in the
+      // console. A missing catalog is a wizard that can't offer reports — it
+      // is not a wizard that never finishes loading.
+      const [r, a, u] = await Promise.allSettled([
         backend.listReports(),
         backend.listAccounts(),
         backend.getUsage(),
       ]);
       if (!alive) return;
-      setReports(r);
-      setAccounts(a);
-      setUsage(u);
+      if (r.status === "rejected") {
+        setError(
+          r.reason instanceof Error && r.reason.message
+            ? r.reason.message
+            : "We couldn't load your report catalog. Try again in a moment."
+        );
+      }
+      const reportList = r.status === "fulfilled" ? r.value : [];
+      const accountList = a.status === "fulfilled" ? a.value : [];
+      const usageValue = u.status === "fulfilled" ? u.value : null;
+      setReports(reportList);
+      setAccounts(accountList);
+      setUsage(usageValue);
 
       let hydrated: WizardState | null = null;
       try {
         if (templateId) {
-          hydrated = hydrateFromDraft(await backend.materializeTemplate(templateId), a, startStep);
+          hydrated = hydrateFromDraft(await backend.materializeTemplate(templateId), accountList, startStep);
         } else if (proposalId) {
           const proposal = await backend.getAgentProposal(proposalId);
-          if (proposal) hydrated = hydrateFromDraft(proposal.draft, a, startStep);
+          if (proposal) hydrated = hydrateFromDraft(proposal.draft, accountList, startStep);
         }
       } catch {
         hydrated = null;
@@ -117,9 +131,9 @@ export function SyncWizard({ ctx, params }: { ctx: AppContext; params: Record<st
         const gated = SCHEDULE_OPTIONS.find((s) => s.id === draftState.schedule)?.requiresPro;
         dispatch({
           type: "hydrate",
-          state: gated && u.plan !== "pro" ? { ...draftState, schedule: "daily" } : draftState,
+          state: gated && usageValue?.plan !== "pro" ? { ...draftState, schedule: "daily" } : draftState,
         });
-      } else if (a.length > 0) {
+      } else if (accountList.length > 0) {
         // No prefill: preselect every linked account + its marketplaces so the
         // common single-account case is one click from step 2.
         dispatch({
@@ -127,8 +141,8 @@ export function SyncWizard({ ctx, params }: { ctx: AppContext; params: Record<st
           state: {
             ...INITIAL_WIZARD,
             step: startStep,
-            accountIds: a.map((x) => x.id),
-            marketplaceIds: [...new Set(a.flatMap((x) => x.marketplaces.map((m) => m.id)))],
+            accountIds: accountList.map((x) => x.id),
+            marketplaceIds: [...new Set(accountList.flatMap((x) => x.marketplaces.map((m) => m.id)))],
           },
         });
       }

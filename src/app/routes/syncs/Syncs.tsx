@@ -20,21 +20,33 @@ export function Syncs({ ctx }: { ctx: AppContext }) {
   const [reports, setReports] = useState<ReportCatalogEntry[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    setSyncs(await getBackend().listSyncs());
+    try {
+      setSyncs(await getBackend().listSyncs());
+      setError(null);
+    } catch (err) {
+      // An empty list is a legitimate state; a failed read is not, and must
+      // not masquerade as one. Say so and leave the list as it was.
+      setSyncs((prev) => prev ?? []);
+      setError(err instanceof Error && err.message ? err.message : "Couldn't load your syncs.");
+    }
   }, []);
 
   useEffect(() => {
-    void getBackend().listReports().then(setReports);
+    void getBackend().listReports().then(setReports, () => setReports([]));
     void refresh();
   }, [refresh]);
 
   const act = async (id: string, fn: () => Promise<unknown>) => {
     setBusy(id);
+    setError(null);
     try {
       await fn();
       await refresh();
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : "That didn't work. Try again.");
     } finally {
       setBusy(null);
     }
@@ -55,6 +67,12 @@ export function Syncs({ ctx }: { ctx: AppContext }) {
           ) : null
         }
       />
+
+      {error ? (
+        <p className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-[12px] leading-relaxed text-red-700">
+          {error}
+        </p>
+      ) : null}
 
       {syncs === null ? (
         <div className="flex h-24 items-center justify-center">

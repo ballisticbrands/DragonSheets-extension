@@ -5,7 +5,7 @@
  * Google sheet-access check) and the CWS-required about/links block.
  */
 import { useCallback, useEffect, useState } from "react";
-import { getBackend } from "../../backend";
+import { getBackend, getBackendMode } from "../../backend";
 import { checkAccess, forgetGrants } from "../../backend/sheet-access";
 import type {
   ConnectProvider,
@@ -427,8 +427,11 @@ function MembersTab() {
 
 function AboutTab() {
   const manifest = chrome.runtime.getManifest();
+  // Hardcoding "mock" here made a real build lie about itself in the one
+  // place a bug report copies from.
+  const mode = getBackendMode();
   const issueBody = encodeURIComponent(
-    `\n\n---\nVersion: ${manifest.version}\nBackend: mock\nUser agent: ${navigator.userAgent}`
+    `\n\n---\nVersion: ${manifest.version}\nBackend: ${mode}\nUser agent: ${navigator.userAgent}`
   );
   return (
     <div className="flex flex-col gap-2.5">
@@ -439,7 +442,9 @@ function AboutTab() {
           </span>
           <div>
             <div className="text-[13.5px] font-semibold text-ink">DragonSheets</div>
-            <div className="text-[11.5px] text-ink/50">v{manifest.version} · mock backend</div>
+            <div className="text-[11.5px] text-ink/50">
+              v{manifest.version} · {mode === "real" ? "live backend" : "mock backend"}
+            </div>
           </div>
         </div>
         <p className="mt-2.5 text-[11.5px] leading-relaxed text-ink/50">
@@ -480,10 +485,12 @@ function AboutTab() {
         </ul>
       </Card>
 
-      <p className="text-[11px] leading-relaxed text-ink/40">
-        Mock mode: everything on these screens is generated locally and stored in
-        this browser. No data leaves your machine yet.
-      </p>
+      {mode === "mock" ? (
+        <p className="text-[11px] leading-relaxed text-ink/40">
+          Mock mode: everything on these screens is generated locally and stored
+          in this browser. No data leaves your machine yet.
+        </p>
+      ) : null}
     </div>
   );
 }
