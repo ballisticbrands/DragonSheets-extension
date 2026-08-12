@@ -99,6 +99,87 @@ await click(/live data sync|syncs/i,'open-syncs'); await page.screenshot({path:'
 trail.push({syncsText:(await txt()).slice(0,160)});
 await click(/new live data sync|new sync|create/i,'open-wizard'); await page.screenshot({path:'d-05-wizard.png'});
 trail.push({wizardText:(await txt()).slice(0,200)});
-fs.writeFileSync('deep-report.json',JSON.stringify({trail,errors},null,2));
-console.log(JSON.stringify({trail,errors},null,2));
+
+// ── regression checks for the 2026-08-12 fixes ────────────────────────────
+// These assert, rather than narrate: each one is a bug that shipped once.
+const checks=[];
+function assert(label,ok,detail){checks.push(ok?{check:label,ok:true}:{check:label,ok:false,detail:String(detail).slice(0,200)})}
+
+// Bug 3 — the panel used to be top:0/h-screen and covered Google's title bar,
+// including the Share button its own onboarding tells the user to click.
+const geom = await page.evaluate(() => {
+  const host = document.querySelector('#dragonsheets-host');
+  const panel = host.shadowRoot.querySelector('#dragonsheets-app > div');
+  const body = panel.querySelector('.overflow-y-auto');
+  const box = (sel) => document.querySelector(sel).getBoundingClientRect();
+  const covered = (sel) => {
+    const r = box(sel);
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return hit === null || hit.closest(sel) === null;
+  };
+  const p = panel.getBoundingClientRect();
+  return {
+    panelTop: Math.round(p.top), panelBottom: Math.round(p.bottom),
+    toolbarBottom: Math.round(box('#docs-toolbar').bottom),
+    viewportHeight: window.innerHeight,
+    shareCovered: covered('#docs-titlebar-share-client-button'),
+    launcherCovered: covered('#dragonsheets-launcher'),
+    bodyScrolls: body ? getComputedStyle(body).overflowY === 'auto' && body.clientHeight > 0
+      && body.clientHeight <= p.height : false,
+  };
+});
+trail.push({geometry:geom});
+assert('panel starts BELOW Google\'s toolbar', geom.panelTop >= geom.toolbarBottom, JSON.stringify(geom));
+assert('panel still runs to the bottom of the viewport',
+  Math.abs(geom.panelBottom - geom.viewportHeight) <= 1, JSON.stringify(geom));
+assert('Google\'s Share button is clickable, not covered', !geom.shareCovered, JSON.stringify(geom));
+assert('the launcher pill is clickable, not covered', !geom.launcherCovered, JSON.stringify(geom));
+assert('the panel body still scrolls inside the reduced height', geom.bodyScrolls, JSON.stringify(geom));
+
+// Bugs 1 + 2 — reach the share screen by deep link (dsr=), which also proves
+// the deep-link router survived the sharing gate.
+await page.goto('https://docs.google.com/spreadsheets/d/T/edit?dsr=share-spreadsheet');
+const reachedShare = await waitText(/Share this spreadsheet with DragonSheets/i);
+assert('dsr= deep link still lands on its screen with the gate in place', reachedShare,
+  (await txt()).slice(0,200));
+
+// Bug 1 — the service-account address must never render blank.
+const readEmail = () => page.evaluate(() => {
+  const root = document.querySelector('#dragonsheets-host').shadowRoot;
+  const box = [...root.querySelectorAll('.font-mono')].map(e => e.textContent.trim()).filter(Boolean);
+  return box[0] || '';
+});
+let shownEmail = '';
+for (const t0 = Date.now(); Date.now() - t0 < 15000;) {
+  shownEmail = await readEmail();
+  if (shownEmail) break;
+  await page.waitForTimeout(200);
+}
+trail.push({shareEmail:shownEmail});
+assert('the share screen renders a real address, not an empty box',
+  /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(shownEmail), shownEmail);
+
+// Bug 2 — "open it for me" must actually fire Google's handler. The fixture's
+// Share control is a div[role=button] that only reacts to the mousedown→mouseup
+// pair, exactly like the real Closure widget: a regression to .click()-only or
+// keydown-only fails here.
+const dialogBefore = await page.evaluate(() =>
+  getComputedStyle(document.querySelector('#share-dialog')).display);
+await page.getByRole('button',{name:/open it for me/i}).first().click({timeout:8000});
+await page.waitForTimeout(1500);
+const dialogAfter = await page.evaluate(() =>
+  getComputedStyle(document.querySelector('#share-dialog')).display);
+trail.push({shareDialog:{before:dialogBefore,after:dialogAfter}});
+assert('"open it for me" opens Google\'s Share dialog',
+  dialogBefore === 'none' && dialogAfter !== 'none', `${dialogBefore} → ${dialogAfter}`);
+await page.screenshot({path:'d-06-share.png'});
+
+const failed = checks.filter(c => !c.ok);
+fs.writeFileSync('deep-report.json',JSON.stringify({trail,checks,errors},null,2));
+console.log(JSON.stringify({trail,checks,errors},null,2));
 await ctx.close();
+if (failed.length > 0 || errors.length > 0) {
+  console.error(`\n${failed.length} regression check(s) failed, ${errors.length} page error(s).`);
+  process.exit(1);
+}
+console.log(`\nAll ${checks.length} regression checks passed, ${trail.filter(t=>t.click).length} clicks OK, 0 page errors.`);

@@ -12,6 +12,7 @@ import { createRoot } from "react-dom/client";
 import { SidebarApp } from "../app/App";
 import { logDiag } from "../lib/diagnostics";
 import type { SelectorMap } from "./selector-map";
+import { installTopOffset } from "./top-offset";
 import tailwindCss from "../app/styles.css?inline";
 
 const HOST_ID = "dragonsheets-host";
@@ -25,6 +26,11 @@ export function mountSidebar(selectors: SelectorMap): void {
   // root positions itself fixed against the viewport.
   host.setAttribute("style", "position:fixed;top:0;right:0;width:0;height:0;z-index:2147483001;");
   document.body.appendChild(host);
+
+  // Custom properties inherit through the shadow boundary, so measuring
+  // Google's chrome out here and reading it inside App.tsx needs no plumbing
+  // — and no React re-render on every resize tick.
+  installTopOffset(host, selectors);
 
   const shadow = host.attachShadow({ mode: "open" });
 

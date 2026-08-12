@@ -9,6 +9,7 @@ import { getBackend, getBackendMode } from "../backend";
 import type { Session } from "../backend/types";
 import { sidebarStore } from "../content/sidebar-store";
 import { getSpreadsheetId, type SelectorMap } from "../content/selector-map";
+import { TOP_OFFSET_VAR } from "../content/top-offset";
 import {
   readRouteFromUrl,
   sameRoute,
@@ -16,7 +17,10 @@ import {
   writeRouteToUrl,
   type Route,
   type RouteLike,
+  type RouteName,
 } from "./router";
+import { checkAccess } from "../backend/sheet-access";
+import { logDiag } from "../lib/diagnostics";
 import { Welcome } from "./routes/Welcome";
 import { ShareSpreadsheet } from "./routes/ShareSpreadsheet";
 import { OnboardingCompleted } from "./routes/OnboardingCompleted";
@@ -33,6 +37,27 @@ import { Spinner } from "../ui/Spinner";
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 560;
 const DEFAULT_WIDTH = 360;
+
+/**
+ * Screens the sharing gate leaves alone.
+ *
+ *  - `welcome` — you cannot share a sheet with an account you haven't signed
+ *    into yet.
+ *  - `share-spreadsheet` — the destination; redirecting to it from itself
+ *    would just churn history.
+ *  - `settings` — the way OUT. Sign-out and the Google tab live there, and a
+ *    gate that can lock someone out of Settings is a gate that can lock them
+ *    out of the product.
+ *
+ * Everything else — including a `dsr=` deep link — is gated. The deep-link
+ * router itself is untouched: the URL is parsed exactly as before, and this
+ * only changes which route wins afterwards.
+ */
+const GATE_EXEMPT: ReadonlySet<RouteName> = new Set<RouteName>([
+  "welcome",
+  "share-spreadsheet",
+  "settings",
+]);
 
 export interface AppContext {
   /** Push a route (adds a browser history entry). */
@@ -152,6 +177,48 @@ export function SidebarApp({ selectors }: { selectors: SelectorMap }) {
     setRoute(toRoute(session ? "home" : "welcome"));
   }, [open, booted, route, session]);
 
+  // ── the sharing gate ─────────────────────────────────────────────────────
+  //
+  // A spreadsheet that isn't shared with the service account cannot be written
+  // to, so every screen behind this one is decoration. It runs on OPEN rather
+  // than once during onboarding, because the bug it fixes is exactly that: the
+  // user X'ed out of the share step and had no way back to it.
+  //
+  // It runs once per open, and only redirects if the user is still on the
+  // screen they opened onto — the check is a round trip, and yanking someone
+  // out of a screen they navigated to in the meantime would be its own bug.
+  //
+  // Caching lives in backend/sheet-access.ts: grants are memoised for a few
+  // minutes so toggling the pill isn't a network call, denials never are, so
+  // sharing the sheet and coming back always works.
+  const routeRef = useRef<Route | null>(route);
+  routeRef.current = route;
+  const gatedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open || !booted || !session) {
+      if (!open) gatedFor.current = null;
+      return;
+    }
+    const key = `${session.userId}|${spreadsheetId}`;
+    if (gatedFor.current === key) return;
+    gatedFor.current = key;
+    void (async () => {
+      try {
+        const res = await checkAccess(spreadsheetId);
+        if (res.granted) return;
+        if (!sidebarStore.isOpen()) return;
+        const current = routeRef.current;
+        if (current && GATE_EXEMPT.has(current.name)) return;
+        navigate("share-spreadsheet");
+      } catch (err) {
+        // A transient failure must not strand the user on the share screen
+        // with an address they can't verify. Log it and let the normal route
+        // stand; the next open re-checks.
+        logDiag("sheet-access-gate-failed", { error: String(err) });
+      }
+    })();
+  }, [open, booted, session, spreadsheetId, navigate]);
+
   // Drag-to-resize.
   const onDragStart = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -189,8 +256,18 @@ export function SidebarApp({ selectors }: { selectors: SelectorMap }) {
 
   return (
     <div
-      className="fixed right-0 top-0 flex h-screen flex-col border-l border-gray-200 bg-white font-sans text-ink shadow-2xl"
-      style={{ width }}
+      className="fixed right-0 flex flex-col border-l border-gray-200 bg-white font-sans text-ink shadow-2xl"
+      // Not `top-0 h-screen`: that laid the panel over Google's title bar and
+      // toolbar, hiding the Share button this product's own onboarding tells
+      // the user to click. `--ds-top-offset` is measured from Google's chrome
+      // and kept current by content/top-offset.ts; the 0px fallback means a
+      // missing var degrades to the old full-height panel rather than to a
+      // zero-height one.
+      style={{
+        width,
+        top: `var(${TOP_OFFSET_VAR}, 0px)`,
+        height: `calc(100vh - var(${TOP_OFFSET_VAR}, 0px))`,
+      }}
     >
       {/* resize handle */}
       <div
@@ -222,7 +299,10 @@ export function SidebarApp({ selectors }: { selectors: SelectorMap }) {
         </button>
       </div>
       {/* body */}
-      <div ref={bodyRef} className="flex flex-1 flex-col overflow-y-auto px-4 py-4">
+      {/* `min-h-0` so the scroll container actually clips: a flex child
+          defaults to min-height:auto and would otherwise grow past the
+          panel's now-shorter height instead of scrolling inside it. */}
+      <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
         {!booted || !route ? (
           <div className="flex h-full items-center justify-center">
             <Spinner size={22} />

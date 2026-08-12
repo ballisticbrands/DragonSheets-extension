@@ -49,6 +49,60 @@
     },
     {
       "wizardText": "DSDragonSheetsSettings×‹ SyncsAccounts & marketplacesWhich Amazon accounts and marketplaces this sync reads from.No Amazon account linked yetA sync pulls from Seller Central or Amazon Ads — connect on"
+    },
+    {
+      "geometry": {
+        "panelTop": 80,
+        "panelBottom": 800,
+        "toolbarBottom": 80,
+        "viewportHeight": 800,
+        "shareCovered": false,
+        "launcherCovered": false,
+        "bodyScrolls": true
+      }
+    },
+    {
+      "shareEmail": "dragonsheets@dragonbot-487712.iam.gserviceaccount.com"
+    },
+    {
+      "shareDialog": {
+        "before": "none",
+        "after": "block"
+      }
+    }
+  ],
+  "checks": [
+    {
+      "check": "panel starts BELOW Google's toolbar",
+      "ok": true
+    },
+    {
+      "check": "panel still runs to the bottom of the viewport",
+      "ok": true
+    },
+    {
+      "check": "Google's Share button is clickable, not covered",
+      "ok": true
+    },
+    {
+      "check": "the launcher pill is clickable, not covered",
+      "ok": true
+    },
+    {
+      "check": "the panel body still scrolls inside the reduced height",
+      "ok": true
+    },
+    {
+      "check": "dsr= deep link still lands on its screen with the gate in place",
+      "ok": true
+    },
+    {
+      "check": "the share screen renders a real address, not an empty box",
+      "ok": true
+    },
+    {
+      "check": "\"open it for me\" opens Google's Share dialog",
+      "ok": true
     }
   ],
   "errors": []
