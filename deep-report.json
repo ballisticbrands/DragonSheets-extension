@@ -19,7 +19,7 @@
       "ok": true
     },
     {
-      "agentText": "DSDragonSheetsSettings×‹ HomeSolve with AINo Amazon account is linked yet, so the agent is answering from the report catalog alone. Connect AmazonDescribe the s"
+      "agentText": "DSDragonSheetsSettings×‹ HomeSolve with AIDescribe the sheet you want. The agent drafts the sync — reports, columns, filters, schedule — and you review it befor"
     },
     {
       "click": "back-home-1",
@@ -48,7 +48,7 @@
       "ok": true
     },
     {
-      "wizardText": "DSDragonSheetsSettings×‹ SyncsAccounts & marketplacesWhich Amazon accounts and marketplaces this sync reads from.No Amazon account linked yetA sync pulls from Seller Central or Amazon Ads — connect on"
+      "wizardText": "DSDragonSheetsSettings×‹ SyncsAccounts & marketplacesWhich Amazon accounts and marketplaces this sync reads from.AccountsBallistic Brands (US)Seller CentralA2VQ8KDL91NRT4Ballistic Brands EUSeller Cent"
     },
     {
       "geometry": {
@@ -69,6 +69,55 @@
         "before": "none",
         "after": "block"
       }
+    },
+    {
+      "accountCards": [
+        {
+          "id": "conn_sp_us",
+          "badge": "Connected",
+          "provider": "seller-central",
+          "buttons": [
+            "Reconnect",
+            "Disconnect"
+          ],
+          "text": "Ballistic Brands (US)ConnectedSeller Central · US, CA, MX · linked Jun 28ReconnectDisconne"
+        },
+        {
+          "id": "conn_sp_eu",
+          "badge": "Connected",
+          "provider": "seller-central",
+          "buttons": [
+            "Reconnect",
+            "Disconnect"
+          ],
+          "text": "Ballistic Brands EUConnectedSeller Central · UK, DE · linked Jul 12ReconnectDisconnect"
+        },
+        {
+          "id": "conn_ads_us",
+          "badge": "Connected",
+          "provider": "ads",
+          "buttons": [
+            "Reconnect",
+            "Disconnect"
+          ],
+          "text": "Ballistic Brands AdsConnectedAmazon Ads · US, CA · linked Jun 28ReconnectDisconnect"
+        },
+        {
+          "id": "conn_ads_eu",
+          "badge": "Needs reconnect",
+          "provider": "ads",
+          "buttons": [
+            "Reconnect",
+            "Disconnect"
+          ],
+          "text": "Ballistic Brands Ads (EU)Needs reconnectAmazon Ads · UK, DE · linked Jul 21Amazon revoked "
+        }
+      ]
+    },
+    {
+      "planAmazonAccounts": 3,
+      "connectedCards": 3,
+      "cardCount": 4
     }
   ],
   "checks": [
@@ -106,6 +155,34 @@
     },
     {
       "check": "\"open it for me\" opens Google's Share dialog",
+      "ok": true
+    },
+    {
+      "check": "Accounts renders one card per connection, not two provider slots",
+      "ok": true
+    },
+    {
+      "check": "…both Seller Central accounts are present (the one that used to vanish)",
+      "ok": true
+    },
+    {
+      "check": "…and the expired connection is visible, not silently absent",
+      "ok": true
+    },
+    {
+      "check": "every card carries its OWN Reconnect + Disconnect",
+      "ok": true
+    },
+    {
+      "check": "Plan still reports a figure for Amazon accounts",
+      "ok": true
+    },
+    {
+      "check": "Accounts and Plan agree: connected cards === Plan's Amazon accounts",
+      "ok": true
+    },
+    {
+      "check": "…and Plan counts only the healthy ones, so it is BELOW the card count",
       "ok": true
     }
   ],

@@ -601,6 +601,84 @@ async function testRealBackend(): Promise<void> {
   check("the connection id is the account id — reconcileConnectionActivations dedupes on it",
     accounts[0]!.id === "conn_sp");
 
+  // --- listConnections: the list Settings → Accounts renders ---
+  //
+  // The regression this locks down: Settings used to render the two-slot
+  // ConnectionStatus, so a seller with two Seller Central accounts and two Ads
+  // accounts saw exactly two cards while Plan (reading the real list) said 3.
+  // Four rows in, four models out — and the broken one is still one of them.
+  const fourRows = [
+    { id: "conn_sp_us", provider: "amazon-selling-partner", status: "connected", connected_at: "2026-08-01T00:00:00Z", error: null, name: null, seller_id: "A2VQ", marketplace_ids: ["ATVPDKIKX0DER"], countries: ["US"], profile_ids: [], account_name: "Ballistic Brands (US)" },
+    { id: "conn_sp_eu", provider: "amazon-selling-partner", status: "connected", connected_at: "2026-08-02T00:00:00Z", error: null, name: null, seller_id: "A1XK", marketplace_ids: ["A1F83G8C2ARO7P"], countries: ["UK"], profile_ids: [], account_name: "Ballistic Brands EU" },
+    { id: "conn_ads_us", provider: "amazon-ads", status: "connected", connected_at: "2026-08-03T00:00:00Z", error: null, name: null, seller_id: null, marketplace_ids: [], countries: [], profile_ids: ["3948571029"], account_name: "Ballistic Brands Ads" },
+    { id: "conn_ads_eu", provider: "amazon-ads", status: "expired", connected_at: "2026-08-04T00:00:00Z", error: "Amazon revoked this authorisation.", name: null, seller_id: null, marketplace_ids: [], countries: [], profile_ids: ["8827361094"], account_name: "Ballistic Brands Ads (EU)" },
+  ];
+
+  nextReplies = [{ status: 200, body: fourRows }];
+  const all = await backend.listConnections();
+  check(
+    "listConnections() returns ONE model per connection — nothing collapsed per provider",
+    all.length === 4,
+    JSON.stringify(all.map((a) => a.id))
+  );
+  check(
+    "…including BOTH Seller Central accounts (the one that used to vanish)",
+    all.filter((a) => a.provider === "amazon-selling-partner").map((a) => a.name).join("|") ===
+      "Ballistic Brands (US)|Ballistic Brands EU",
+    JSON.stringify(all.map((a) => a.name))
+  );
+  check(
+    "…and the NON-connected one, carrying state + the backend's own sentence",
+    all[3]!.state === "error" && all[3]!.error === "Amazon revoked this authorisation.",
+    JSON.stringify(all[3])
+  );
+  check(
+    "a `syncing` row would surface as pending, not hidden and not connected",
+    (await (async () => {
+      nextReplies = [{ status: 200, body: [{ ...fourRows[0]!, id: "c1", status: "syncing" }] }];
+      return (await backend.listConnections())[0]!.state;
+    })()) === "pending"
+  );
+  check(
+    "connectedAt comes through as ms so the card can say when it was linked",
+    all[0]!.connectedAt === Date.parse("2026-08-01T00:00:00Z"),
+    String(all[0]!.connectedAt)
+  );
+
+  nextReplies = [{ status: 200, body: fourRows }];
+  const connectedOnly = await backend.listAccounts();
+  check(
+    "listAccounts() is still the CONNECTED subset — the wizard must only offer accounts data can be pulled from",
+    connectedOnly.length === 3 && connectedOnly.every((a) => a.state === "connected"),
+    JSON.stringify(connectedOnly.map((a) => `${a.id}:${a.state}`))
+  );
+
+  // The two numbers that disagreed in the bug report, now derived from one
+  // payload: Accounts shows every connection, Plan counts the healthy ones.
+  nextReplies = [
+    { status: 200, body: { syncs: [] } },
+    { status: 200, body: fourRows },
+  ];
+  const connUsage = await backend.getUsage();
+  check(
+    "getUsage().accountsUsed counts CONNECTED connections only (3 of 4)",
+    connUsage.accountsUsed === 3,
+    String(connUsage.accountsUsed)
+  );
+
+  // Per-connection disconnect: one DELETE, for the id asked for, and none of
+  // the provider's other connections touched.
+  captured = [];
+  nextReplies = [{ status: 200, body: {} }];
+  await backend.disconnectAccount("conn_sp_eu");
+  check(
+    "disconnectAccount() DELETEs exactly the one connection",
+    captured.length === 1 &&
+      captured[0]!.method === "DELETE" &&
+      captured[0]!.url === "https://api.getdragonbot.com/v1/connections/conn_sp_eu",
+    JSON.stringify(captured)
+  );
+
   // --- the remaining honest gap: the AGENT, which has no backend at all ---
   //
   // Everything under /v1/sheets/* shipped on 2026-08-10 and is exercised in

@@ -180,6 +180,60 @@ assert('"open it for me" opens Google\'s Share dialog',
   dialogBefore === 'none' && dialogAfter !== 'none', `${dialogBefore} → ${dialogAfter}`);
 await page.screenshot({path:'d-06-share.png'});
 
+// ── Settings → Accounts: one card per CONNECTION ──────────────────────────
+// The bug: Accounts rendered getConnectionStatus(), a two-slot summary, so it
+// could show at most two cards while Plan — reading the real per-connection
+// list — said three. The mock now seeds FOUR connections (two Seller Central,
+// two Ads, one of them expired), which makes the old collapse impossible to
+// mistake for correct.
+await page.goto('https://docs.google.com/spreadsheets/d/T/edit?dsr=settings&dsp-tab=accounts');
+await waitText(/Add another Amazon account/i);
+const cards = await page.evaluate(() => {
+  const root = document.querySelector('#dragonsheets-host').shadowRoot;
+  return [...root.querySelectorAll('[data-account-card]')].map(el => {
+    const full = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    const buttons = [...el.querySelectorAll('button')].map(b => (b.textContent||'').trim());
+    return {
+      id: el.getAttribute('data-account-card'),
+      badge: (el.querySelector('span.rounded-full')?.textContent || '').trim(),
+      provider: /Amazon Ads ·|Amazon Ads$/.test(full) ? 'ads'
+        : /Seller Central/.test(full) ? 'seller-central' : 'unknown',
+      buttons,
+      text: full.slice(0, 90),
+    };
+  });
+});
+trail.push({accountCards:cards});
+await page.screenshot({path:'d-07-settings-accounts.png'});
+
+assert('Accounts renders one card per connection, not two provider slots',
+  cards.length === 4, JSON.stringify(cards));
+assert('…both Seller Central accounts are present (the one that used to vanish)',
+  cards.filter(c => c.provider === 'seller-central').length === 2, JSON.stringify(cards));
+assert('…and the expired connection is visible, not silently absent',
+  cards.some(c => c.badge === 'Needs reconnect'), JSON.stringify(cards.map(c=>c.badge)));
+assert('every card carries its OWN Reconnect + Disconnect',
+  cards.every(c => c.buttons.some(b => /^Reconnect$/.test(b)) &&
+                   c.buttons.some(b => /^Disconnect$/.test(b))),
+  JSON.stringify(cards.map(c=>c.buttons)));
+
+// Plan's "Amazon accounts" meter counts the CONNECTED ones — the same payload,
+// a deliberately different number. Both must agree with what Accounts shows.
+await page.goto('https://docs.google.com/spreadsheets/d/T/edit?dsr=settings&dsp-tab=plan');
+await waitText(/Amazon accounts/i);
+const planText = await txt();
+const planAccounts = /Amazon accounts\s*([\d,]+)\s*\/\s*([\d,]+)/.exec(planText);
+const planUsed = planAccounts ? Number(planAccounts[1].replace(/,/g,'')) : NaN;
+const connectedCards = cards.filter(c => c.badge === 'Connected').length;
+trail.push({planAmazonAccounts:planUsed, connectedCards, cardCount:cards.length});
+await page.screenshot({path:'d-08-settings-plan.png'});
+
+assert('Plan still reports a figure for Amazon accounts', Number.isFinite(planUsed), planText.slice(0,200));
+assert('Accounts and Plan agree: connected cards === Plan\'s Amazon accounts',
+  connectedCards === planUsed, `${connectedCards} connected cards vs plan ${planUsed}`);
+assert('…and Plan counts only the healthy ones, so it is BELOW the card count',
+  planUsed < cards.length, `plan ${planUsed}, cards ${cards.length}`);
+
 const failed = checks.filter(c => !c.ok);
 fs.writeFileSync('deep-report.json',JSON.stringify({trail,checks,errors},null,2));
 console.log(JSON.stringify({trail,checks,errors},null,2));
