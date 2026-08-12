@@ -1,5 +1,8 @@
 # DragonSheets-extension
 
+> **Picking this up after a break? Read [STATUS.md](STATUS.md) first** — what works,
+> what is deliberately mocked, what was never verified, and the two obvious next moves.
+
 Chrome extension (MV3): **Amazon Seller Central + Amazon Ads data → Google
 Sheets**, delivered as a sidebar injected into `docs.google.com/spreadsheets`.
 First extension product in the fleet. Landing page lives in
