@@ -182,7 +182,7 @@ export function ShareSpreadsheet({ ctx }: { ctx: AppContext }) {
             <Step n={2}>Paste the email above into “Add people”</Step>
             <Step n={3}>
               Keep the role as <b>Editor</b>, untick “Notify people”, click{" "}
-              <b>Send</b>
+              <b>Share</b>
             </Step>
           </ol>
           {openHint ? <p className="text-[12px] text-ink/50">{openHint}</p> : null}

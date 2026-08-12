@@ -347,17 +347,38 @@ export class RealBackend implements BackendClient {
     return this.getConnectionStatus();
   }
 
-  async listAccounts(): Promise<AmazonAccount[]> {
+  async disconnectAccount(connectionId: string): Promise<void> {
+    await api<void>("DELETE", `/v1/connections/${encodeURIComponent(connectionId)}`);
+  }
+
+  /**
+   * One model object per row of /v1/connections — nothing collapsed. A seller
+   * with two Seller Central accounts gets two entries here, and an expired
+   * connection is still an entry (state "error") because this list is the only
+   * place the UI can offer a reconnect for it.
+   */
+  async listConnections(): Promise<AmazonAccount[]> {
     const rows = await this.connections();
-    return rows
-      .filter((c) => toState(c.status) === "connected")
-      .map((c) => ({
+    return rows.map((c) => {
+      const ads = isAds(c.provider);
+      const account: AmazonAccount = {
         id: c.id,
-        provider: (isAds(c.provider) ? "amazon-ads" : "amazon-selling-partner") as ConnectProvider,
-        name: displayName(c) ?? (isAds(c.provider) ? "Amazon Ads" : "Seller Central"),
+        provider: (ads ? "amazon-ads" : "amazon-selling-partner") as ConnectProvider,
+        name: displayName(c) ?? (ads ? "Amazon Ads" : "Seller Central"),
         externalId: c.seller_id ?? c.profile_ids?.[0] ?? c.id,
         marketplaces: marketplacesOf(c),
-      }));
+        state: toState(c.status),
+      };
+      const at = connectedAtMs(c);
+      if (at !== undefined) account.connectedAt = at;
+      if (c.error) account.error = c.error;
+      return account;
+    });
+  }
+
+  /** The connected subset — see BackendClient.listAccounts. */
+  async listAccounts(): Promise<AmazonAccount[]> {
+    return (await this.listConnections()).filter((a) => a.state === "connected");
   }
 
   // ----- syncs (M3: /v1/sheets/syncs) -----
@@ -567,6 +588,8 @@ export class RealBackend implements BackendClient {
       plan: "free",
       syncsUsed: syncs.length,
       syncsLimit: 25,
+      // listAccounts(), not listConnections(): a usage meter that counted a
+      // broken connection would bill for capacity the user does not have.
       accountsUsed: accounts.length,
       accountsLimit: 10,
       // Rows written by each sync's most recent run — the only row figure the

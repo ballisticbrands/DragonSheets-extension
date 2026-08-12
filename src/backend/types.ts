@@ -43,6 +43,15 @@ export type ConnectProvider = "amazon-selling-partner" | "amazon-ads";
 
 export type ConnectionState = "disconnected" | "pending" | "connected" | "error";
 
+/**
+ * A two-slot SUMMARY — "do I have any Seller Central at all, and any Ads?".
+ *
+ * It is deliberately NOT a list: a user can have several connections per
+ * provider, and this collapses them to the healthiest one each. Anything that
+ * needs to show or count individual connections must use `listConnections()`
+ * / `listAccounts()` instead — rendering this shape as a list is what made
+ * Settings → Accounts cap out at two cards while Plan correctly said three.
+ */
 export interface ConnectionStatus {
   sellerCentral: { state: ConnectionState; accountName?: string; connectedAt?: number };
   ads: { state: ConnectionState; accountName?: string; connectedAt?: number };
@@ -71,6 +80,12 @@ export interface Marketplace {
   name: string;
 }
 
+/**
+ * ONE connection, one object — the model behind both `listConnections()` (all
+ * of them) and `listAccounts()` (the connected subset). `id` is the server's
+ * connection id, so it is also what per-connection disconnect and the
+ * analytics activation dedupe key off.
+ */
 export interface AmazonAccount {
   id: string;
   provider: ConnectProvider;
@@ -78,6 +93,17 @@ export interface AmazonAccount {
   /** Seller/profile id as Amazon shows it — displayed for disambiguation. */
   externalId: string;
   marketplaces: Marketplace[];
+  /**
+   * Always "connected" for anything out of `listAccounts()`; the whole range
+   * shows up in `listConnections()`. Carried on the model rather than kept in
+   * a parallel structure so a broken connection can be RENDERED — a seller
+   * whose token expired has to be able to see it to reconnect it.
+   */
+  state: ConnectionState;
+  /** ms epoch, when the backend knows it. */
+  connectedAt?: number;
+  /** The backend's seller-facing explanation for `state === "error"`. */
+  error?: string;
 }
 
 // ---------- report catalog ----------
@@ -305,11 +331,26 @@ export interface BackendClient {
   // Amazon connections
   startSpApiConnect(): Promise<ConnectStart>;
   startAdsConnect(): Promise<ConnectStart>;
+  /** Two-slot summary — see ConnectionStatus. Never a list. */
   getConnectionStatus(): Promise<ConnectionStatus>;
   /** Called when the consent popup posts a success result back. */
   completeConnect(provider: ConnectProvider): Promise<ConnectionStatus>;
+  /** Drops EVERY connection for a provider. Per-connection: disconnectAccount. */
   disconnect(provider: ConnectProvider): Promise<ConnectionStatus>;
-  /** Connected accounts expanded per marketplace (wizard step 1). */
+  /** Drops one connection by its server id, leaving the provider's others alone. */
+  disconnectAccount(connectionId: string): Promise<void>;
+  /**
+   * EVERY connection, whatever its state — the list Settings → Accounts
+   * renders. A pending or errored connection has to appear here or the user
+   * has no way to reach the reconnect for it.
+   */
+  listConnections(): Promise<AmazonAccount[]>;
+  /**
+   * The CONNECTED subset of `listConnections()` — i.e. the accounts data can
+   * actually be pulled from. This is the answer the sync wizard, the template
+   * / agent draft builders and the usage meter all want, so the filter lives
+   * here once rather than at four call sites that could each forget it.
+   */
   listAccounts(): Promise<AmazonAccount[]>;
 
   // syncs
