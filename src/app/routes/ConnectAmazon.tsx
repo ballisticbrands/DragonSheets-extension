@@ -206,12 +206,14 @@ export function ConnectAmazon({ ctx }: { ctx: AppContext }) {
               <p className="mt-1 text-[12px] font-medium text-deep">{c.state.accountName}</p>
             ) : null}
             <div className="mt-3">
-              {connected ? null : (
-                <Button variant="secondary" disabled={isPending} onClick={() => void connect(c.provider)}>
-                  {isPending ? <Spinner /> : null}
-                  {isPending ? "Waiting for Amazon…" : "Connect"}
-                </Button>
-              )}
+              {/* Offered even when this provider already has a connection: a
+                  seller can own several Seller Central or Ads accounts, and
+                  Settings' "+ Add another Amazon account" lands here — with the
+                  button hidden it was a dead end. */}
+              <Button variant="secondary" disabled={isPending} onClick={() => void connect(c.provider)}>
+                {isPending ? <Spinner /> : null}
+                {isPending ? "Waiting for Amazon…" : connected ? "Connect another" : "Connect"}
+              </Button>
             </div>
           </Card>
         );

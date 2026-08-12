@@ -8,8 +8,9 @@ import { useCallback, useEffect, useState } from "react";
 import { getBackend, getBackendMode } from "../../backend";
 import { checkAccess, forgetGrants } from "../../backend/sheet-access";
 import type {
+  AmazonAccount,
   ConnectProvider,
-  ConnectionStatus,
+  ConnectionState,
   Usage,
   WorkspaceMember,
 } from "../../backend/types";
@@ -62,23 +63,54 @@ export function Settings({ ctx, params }: { ctx: AppContext; params: Record<stri
 
 // ---------------------------------------------------------------------------
 
+const PROVIDER_LABEL: Record<ConnectProvider, string> = {
+  "amazon-selling-partner": "Seller Central",
+  "amazon-ads": "Amazon Ads",
+};
+
+const STATE_BADGE: Record<
+  ConnectionState,
+  { label: string; tone: "forest" | "lime" | "gray" }
+> = {
+  connected: { label: "Connected", tone: "lime" },
+  pending: { label: "Connecting…", tone: "forest" },
+  error: { label: "Needs reconnect", tone: "gray" },
+  disconnected: { label: "Not connected", tone: "gray" },
+};
+
+/**
+ * One card per CONNECTION, from `listConnections()`.
+ *
+ * It used to render `getConnectionStatus()` — a two-slot summary — which meant
+ * the tab structurally could not show a third account however many the user
+ * had (Plan, reading the real list, cheerfully said "3"). And because the list
+ * it now reads includes non-connected connections, an expired token is finally
+ * visible and reconnectable instead of silently absent.
+ */
 function AccountsTab({ ctx }: { ctx: AppContext }) {
-  const [conn, setConn] = useState<ConnectionStatus | null>(null);
-  const [busy, setBusy] = useState<ConnectProvider | null>(null);
-  const [confirm, setConfirm] = useState<ConnectProvider | null>(null);
+  const [accounts, setAccounts] = useState<AmazonAccount[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  /** Connection id being disconnected / awaiting confirmation. */
+  const [busy, setBusy] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    setConn(await getBackend().getConnectionStatus());
+    try {
+      setAccounts(await getBackend().listConnections());
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    }
   }, []);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  const disconnect = async (provider: ConnectProvider) => {
-    setBusy(provider);
+  const disconnect = async (connectionId: string) => {
+    setBusy(connectionId);
     try {
-      await getBackend().disconnect(provider);
+      await getBackend().disconnectAccount(connectionId);
       setConfirm(null);
       await refresh();
     } finally {
@@ -86,7 +118,24 @@ function AccountsTab({ ctx }: { ctx: AppContext }) {
     }
   };
 
-  if (!conn) {
+  if (failed) {
+    return (
+      <Card>
+        <div className="text-[13.5px] font-semibold text-ink">Accounts</div>
+        <p className="mt-1 text-[12px] leading-relaxed text-ink/60">
+          Your linked accounts couldn't be loaded just now. Nothing has been
+          disconnected — syncs keep running on their schedule.
+        </p>
+        <div className="mt-2.5">
+          <Button variant="secondary" className="px-2.5 py-1.5 text-[11px]" onClick={() => void refresh()}>
+            Try again
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  if (!accounts) {
     return (
       <div className="flex h-20 items-center justify-center">
         <Spinner size={18} />
@@ -94,50 +143,64 @@ function AccountsTab({ ctx }: { ctx: AppContext }) {
     );
   }
 
-  const cards: Array<{ provider: ConnectProvider; title: string; state: ConnectionStatus["ads"] }> = [
-    { provider: "amazon-selling-partner", title: "Seller Central", state: conn.sellerCentral },
-    { provider: "amazon-ads", title: "Amazon Ads", state: conn.ads },
-  ];
-
   return (
     <div className="flex flex-col gap-2.5">
-      {cards.map((c) => {
-        const connected = c.state.state === "connected";
-        return (
-          <Card key={c.provider}>
-            <div className="flex items-center gap-2">
-              <span className="text-[13.5px] font-semibold text-ink">{c.title}</span>
-              {connected ? <Badge tone="lime">Connected</Badge> : <Badge tone="gray">Not connected</Badge>}
-            </div>
-            {connected ? (
+      {accounts.length === 0 ? (
+        <Card>
+          <div className="text-[13.5px] font-semibold text-ink">No Amazon account linked</div>
+          <p className="mt-1 text-[12px] leading-relaxed text-ink/60">
+            Link Seller Central or Amazon Ads to unlock the matching reports in
+            the sync wizard.
+          </p>
+          <div className="mt-2.5">
+            <Button
+              variant="secondary"
+              className="px-2.5 py-1.5 text-[11px]"
+              onClick={() => ctx.navigate("connect-amazon")}
+            >
+              Connect
+            </Button>
+          </div>
+        </Card>
+      ) : (
+        accounts.map((a) => {
+          const badge = STATE_BADGE[a.state];
+          const markets = a.marketplaces.map((m) => m.countryCode || m.id).join(", ");
+          return (
+            <Card key={a.id} data-account-card={a.id}>
+              <div className="flex items-center gap-2">
+                <span className="text-[13.5px] font-semibold text-ink">{a.name}</span>
+                <Badge tone={badge.tone}>{badge.label}</Badge>
+              </div>
               <p className="mt-1 text-[12px] text-ink/60">
-                {c.state.accountName}
-                {c.state.connectedAt ? ` · linked ${relativeTime(c.state.connectedAt)}` : ""}
+                {PROVIDER_LABEL[a.provider]}
+                {markets ? ` · ${markets}` : ""}
+                {a.connectedAt ? ` · linked ${relativeTime(a.connectedAt)}` : ""}
               </p>
-            ) : (
-              <p className="mt-1 text-[12px] text-ink/50">
-                Link it to unlock the matching reports in the sync wizard.
-              </p>
-            )}
-            <div className="mt-2.5 flex items-center gap-1.5">
-              <Button
-                variant="secondary"
-                className="px-2.5 py-1.5 text-[11px]"
-                onClick={() => ctx.navigate("connect-amazon")}
-              >
-                {connected ? "Reconnect" : "Connect"}
-              </Button>
-              {connected ? (
-                confirm === c.provider ? (
+              {/* The backend's sentence is written for a seller — show it. */}
+              {a.state === "error" ? (
+                <p className="mt-1.5 text-[11.5px] leading-relaxed text-red-700">
+                  {a.error ?? "Amazon stopped accepting this authorisation. Reconnect to resume."}
+                </p>
+              ) : null}
+              <div className="mt-2.5 flex items-center gap-1.5">
+                <Button
+                  variant="secondary"
+                  className="px-2.5 py-1.5 text-[11px]"
+                  onClick={() => ctx.navigate("connect-amazon")}
+                >
+                  Reconnect
+                </Button>
+                {confirm === a.id ? (
                   <>
                     <span className="text-[11px] text-ink/50">Disconnect?</span>
                     <Button
                       variant="danger"
                       className="px-2.5 py-1.5 text-[11px]"
-                      disabled={busy === c.provider}
-                      onClick={() => void disconnect(c.provider)}
+                      disabled={busy === a.id}
+                      onClick={() => void disconnect(a.id)}
                     >
-                      {busy === c.provider ? <Spinner size={12} /> : null}
+                      {busy === a.id ? <Spinner size={12} /> : null}
                       Yes
                     </Button>
                     <Button
@@ -152,16 +215,16 @@ function AccountsTab({ ctx }: { ctx: AppContext }) {
                   <Button
                     variant="ghost"
                     className="px-2.5 py-1.5 text-[11px]"
-                    onClick={() => setConfirm(c.provider)}
+                    onClick={() => setConfirm(a.id)}
                   >
                     Disconnect
                   </Button>
-                )
-              ) : null}
-            </div>
-          </Card>
-        );
-      })}
+                )}
+              </div>
+            </Card>
+          );
+        })
+      )}
       <Button variant="ghost" className="w-full" onClick={() => ctx.navigate("connect-amazon")}>
         + Add another Amazon account
       </Button>
