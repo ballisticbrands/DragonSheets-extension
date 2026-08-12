@@ -37,8 +37,10 @@ export function Templates({ ctx, params }: { ctx: AppContext; params: Record<str
 
   useEffect(() => {
     const backend = getBackend();
-    void backend.listTemplates().then(setTemplates);
-    void backend.listReports().then(setReports);
+    // A rejected mount-time read used to leave this screen on its spinner
+    // forever. `[]` is a state the gallery can actually render.
+    void backend.listTemplates().then(setTemplates, () => setTemplates([]));
+    void backend.listReports().then(setReports, () => setReports([]));
   }, []);
 
   const shown = useMemo(
@@ -105,7 +107,11 @@ export function Templates({ ctx, params }: { ctx: AppContext; params: Record<str
             </Card>
           ))}
           {shown.length === 0 ? (
-            <p className="text-center text-[12px] text-ink/40">Nothing in this category yet.</p>
+            <p className="text-center text-[12px] leading-relaxed text-ink/40">
+              {templates.length === 0
+                ? "Templates aren't available against live Amazon data yet — build the sheet you want in the sync wizard and it'll do the same job."
+                : "Nothing in this category yet."}
+            </p>
           ) : null}
         </div>
       )}

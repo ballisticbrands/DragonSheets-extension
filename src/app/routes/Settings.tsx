@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { getBackend } from "../../backend";
+import { checkAccess, forgetGrants } from "../../backend/sheet-access";
 import type {
   ConnectProvider,
   ConnectionStatus,
@@ -176,20 +177,33 @@ function AccountsTab({ ctx }: { ctx: AppContext }) {
 
 function GoogleTab({ ctx }: { ctx: AppContext }) {
   const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
   const [granted, setGranted] = useState<boolean | null>(null);
 
   useEffect(() => {
-    void getBackend().getServiceAccountEmail().then(setEmail);
-  }, []);
+    void getBackend()
+      .getServiceAccountEmail(ctx.spreadsheetId)
+      .then((value) => {
+        setEmail(value);
+        setEmailError(null);
+      })
+      .catch((err: unknown) =>
+        setEmailError(err instanceof Error && err.message ? err.message : "Couldn't load the address.")
+      );
+  }, [ctx.spreadsheetId]);
 
   const recheck = async () => {
     setChecking(true);
     try {
-      const res = await getBackend().checkSheetAccess(ctx.spreadsheetId);
+      // `force` — this button exists precisely to bypass the memo.
+      const res = await checkAccess(ctx.spreadsheetId, { force: true });
       setGranted(res.granted);
       setCheckedAt(res.checkedAt);
+    } catch {
+      setGranted(false);
+      setCheckedAt(Date.now());
     } finally {
       setChecking(false);
     }
@@ -210,12 +224,20 @@ function GoogleTab({ ctx }: { ctx: AppContext }) {
 
       <Card>
         <div className="text-[13.5px] font-semibold text-ink">Sheet access</div>
-        <div className="mt-2 rounded-xl border border-forest/20 bg-forest/5 p-2.5">
-          <div className="break-all font-mono text-[11.5px] text-deep">{email || "…"}</div>
-          <div className="mt-2">
-            <CopyButton value={email} label="Copy email" />
+        {/* Never a blank monospace box with a Copy button under it: if the
+            address couldn't be loaded, say so instead. */}
+        {emailError ? (
+          <p className="mt-2 rounded-xl border border-red-200 bg-red-50 p-2.5 text-[11.5px] leading-relaxed text-red-700">
+            {emailError}
+          </p>
+        ) : (
+          <div className="mt-2 rounded-xl border border-forest/20 bg-forest/5 p-2.5">
+            <div className="break-all font-mono text-[11.5px] text-deep">{email || "…"}</div>
+            <div className="mt-2">
+              <CopyButton value={email} label="Copy email" />
+            </div>
           </div>
-        </div>
+        )}
         <p className="mt-2 text-[11.5px] leading-relaxed text-ink/50">
           This spreadsheet: <span className="font-mono">{ctx.spreadsheetId.slice(0, 12)}…</span>
         </p>
@@ -225,14 +247,39 @@ function GoogleTab({ ctx }: { ctx: AppContext }) {
             {checking ? "Checking…" : "Re-check access"}
           </Button>
           {granted !== null && checkedAt !== null ? (
-            <span className="text-[11.5px] text-forest">
+            <span className={`text-[11.5px] ${granted ? "text-forest" : "text-red-600"}`}>
               {granted ? "Access confirmed" : "No access"} · {relativeTime(checkedAt)}
             </span>
           ) : null}
         </div>
+        {/* The way BACK to sharing. The gate on open sends unshared sheets
+            here, but someone who dismissed it needs a deliberate route too —
+            not being able to find one is the bug this fixes. */}
+        <div className="mt-2">
+          <Button
+            variant="ghost"
+            className="px-3 py-1.5 text-[11.5px]"
+            onClick={() => ctx.navigate("share-spreadsheet")}
+          >
+            Sharing instructions →
+          </Button>
+        </div>
       </Card>
 
-      <Button variant="ghost" className="w-full" onClick={() => void getBackend().signOut().then(() => ctx.navigate("welcome"))}>
+      <Button
+        variant="ghost"
+        className="w-full"
+        onClick={() =>
+          void getBackend()
+            .signOut()
+            .then(() => {
+              // The grant belongs to the signed-in identity, so it must not
+              // outlive the session.
+              forgetGrants();
+              ctx.navigate("welcome");
+            })
+        }
+      >
         Sign out
       </Button>
     </div>
@@ -243,11 +290,24 @@ function GoogleTab({ ctx }: { ctx: AppContext }) {
 
 function PlanTab() {
   const [usage, setUsage] = useState<Usage | null>(null);
+  const [failed, setFailed] = useState(false);
   const [upgradeNote, setUpgradeNote] = useState(false);
 
   useEffect(() => {
-    void getBackend().getUsage().then(setUsage);
+    void getBackend().getUsage().then(setUsage, () => setFailed(true));
   }, []);
+
+  if (failed) {
+    return (
+      <Card>
+        <div className="text-[13.5px] font-semibold text-ink">Plan</div>
+        <p className="mt-1 text-[12px] leading-relaxed text-ink/60">
+          Plan and usage aren't available right now. Nothing you've set up is
+          affected — syncs keep running on their schedule.
+        </p>
+      </Card>
+    );
+  }
 
   if (!usage) {
     return (

@@ -48,8 +48,8 @@ export function Agent({ ctx }: { ctx: AppContext }) {
 
   useEffect(() => {
     const backend = getBackend();
-    void backend.getAgentHistory().then(setMessages);
-    void backend.getConnectionStatus().then(setConn);
+    void backend.getAgentHistory().then(setMessages, () => setMessages([]));
+    void backend.getConnectionStatus().then(setConn, () => setConn(null));
     return () => {
       cancelled.current = true;
     };

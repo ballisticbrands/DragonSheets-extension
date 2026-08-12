@@ -19,8 +19,10 @@ export function Home({ ctx }: { ctx: AppContext }) {
 
   useEffect(() => {
     const backend = getBackend();
-    void backend.getConnectionStatus().then(setConn);
-    void backend.getUsage().then(setUsage);
+    // Both lines here are decorative; a failed read hides its own line rather
+    // than producing an unhandled rejection in the console.
+    void backend.getConnectionStatus().then(setConn, () => setConn(null));
+    void backend.getUsage().then(setUsage, () => setUsage(null));
   }, []);
 
   const amazonConnected =
