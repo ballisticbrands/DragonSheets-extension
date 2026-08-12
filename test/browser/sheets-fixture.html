@@ -5,7 +5,8 @@
  #docs-bars{background:#fff;border-bottom:1px solid #e0e0e0;padding:6px 12px}
  #docs-toolbar{display:flex;align-items:center;gap:8px;padding:6px 12px;background:#fff;border-bottom:1px solid #e0e0e0;min-height:36px}
  .tb{padding:4px 8px;border-radius:4px;background:#f1f3f4}
- #docs-titlebar-share-client-button{margin-left:auto;background:#0b57d0;color:#fff;padding:8px 16px;border-radius:20px;border:none}
+ #docs-titlebar-share-client-button{margin-left:auto;background:#0b57d0;color:#fff;padding:8px 16px;border-radius:20px;border:none;cursor:pointer;user-select:none}
+ #share-dialog{display:none;position:fixed;top:120px;left:50%;transform:translateX(-50%);width:420px;background:#fff;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.3);padding:20px;z-index:1000}
  #docs-presence-container{display:inline-block;width:32px;height:32px;border-radius:50%;background:#ddd}
  .grid{display:grid;grid-template-columns:repeat(8,120px);}
  .cell{border:1px solid #e8eaed;height:22px;padding:2px 4px}
@@ -15,8 +16,29 @@
 <div id="docs-toolbar">
   <span class="tb">↶</span><span class="tb">↷</span><span class="tb">100%</span><span class="tb">$</span><span class="tb">B</span>
   <div id="docs-presence-container"></div>
-  <button id="docs-titlebar-share-client-button">Share</button>
+  <!-- NOT a <button>. The real one is a Closure widget rendered as a
+       div[role=button], and that is the whole reason "open it for me" was
+       broken: goog.ui.Control activates on the mousedown→mouseup PAIR, and
+       ignores a bare click event. This fixture behaves the same way, so a
+       regression back to .click()-only or keydown-only fails the smoke test. -->
+  <div id="docs-titlebar-share-client-button" role="button" tabindex="0" aria-label="Share"><span>Share</span></div>
 </div>
+<div id="share-dialog" role="dialog" aria-modal="true" aria-label="Share &quot;Test Sheet&quot;">
+  <b>Share “Test Sheet”</b>
+  <p>Add people and groups</p>
+</div>
+<script>
+(function () {
+  var btn = document.getElementById('docs-titlebar-share-client-button');
+  var dlg = document.getElementById('share-dialog');
+  var armed = false;
+  btn.addEventListener('mousedown', function (e) { if (e.button === 0) armed = true; });
+  btn.addEventListener('mouseup', function (e) {
+    if (armed && e.button === 0) { armed = false; dlg.style.display = 'block'; }
+  });
+  // Deliberately NO click / keydown listener.
+})();
+</script>
 <div class="grid" id="waffle-grid">
   <div class="cell hdr">A</div><div class="cell hdr">B</div><div class="cell hdr">C</div><div class="cell hdr">D</div>
   <div class="cell hdr">E</div><div class="cell hdr">F</div><div class="cell hdr">G</div><div class="cell hdr">H</div>
