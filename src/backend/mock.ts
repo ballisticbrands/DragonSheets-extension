@@ -18,6 +18,7 @@ import type {
   CalculatedColumn,
   ConnectProvider,
   ConnectStart,
+  ConnectionState,
   ConnectionStatus,
   DateRangePreset,
   Marketplace,
@@ -44,20 +45,42 @@ interface MockState {
   session: Session | null;
   /** spreadsheetId → access granted */
   sheetAccess: Record<string, boolean>;
-  connections: ConnectionStatus;
+  /**
+   * A LIST, mirroring the real backend's /v1/connections — not the two-slot
+   * ConnectionStatus it used to be. Storing the summary shape made the mock
+   * incapable of ever holding a third account, which is exactly the situation
+   * the Settings → Accounts bug needed reproducing.
+   */
+  connections: MockConnection[];
+  /**
+   * Whether the demo connections have been minted for this identity. Distinct
+   * from `connections.length > 0` so that disconnecting every account STAYS
+   * empty across reloads instead of silently re-seeding.
+   */
+  connectionsSeeded: boolean;
   syncs: Sync[];
   runs: SyncRun[];
   agentHistory: AgentMessage[];
   proposals: AgentProposal[];
 }
 
+/** The mock's stand-in for one row of the real backend's /v1/connections. */
+interface MockConnection {
+  id: string;
+  provider: ConnectProvider;
+  name: string;
+  externalId: string;
+  state: ConnectionState;
+  connectedAt?: number;
+  error?: string;
+  marketplaceIds: string[];
+}
+
 const EMPTY_STATE: MockState = {
   session: null,
   sheetAccess: {},
-  connections: {
-    sellerCentral: { state: "disconnected" },
-    ads: { state: "disconnected" },
-  },
+  connections: [],
+  connectionsSeeded: false,
   syncs: [],
   runs: [],
   agentHistory: [],
@@ -86,6 +109,104 @@ const MARKETPLACES: Marketplace[] = [
   { id: "UK", countryCode: "UK", name: "United Kingdom (amazon.co.uk)" },
   { id: "DE", countryCode: "DE", name: "Germany (amazon.de)" },
 ];
+
+const DAY_MS = 86_400_000;
+
+/**
+ * The demo seller's connections, minted at sign-in.
+ *
+ * Shaped deliberately, because this fixture IS the regression guard for the
+ * Settings → Accounts bug:
+ *
+ *  · FOUR connections, so anything that collapses per provider (the old
+ *    two-card Accounts tab) is visibly wrong rather than plausibly right;
+ *  · TWO of them Seller Central, which is the case that vanished;
+ *  · one in "error", so the "an expired connection must still be reachable to
+ *    reconnect" path is on screen in every demo and screenshot;
+ *  · every `connectedAt` well past the analytics 7-day activation window, so
+ *    seeding the demo cannot fire conversion events for accounts nobody just
+ *    connected.
+ */
+function seedConnections(now: number): MockConnection[] {
+  return [
+    {
+      id: "conn_sp_us",
+      provider: "amazon-selling-partner",
+      name: "Ballistic Brands (US)",
+      externalId: "A2VQ8KDL91NRT4",
+      state: "connected",
+      connectedAt: now - 45 * DAY_MS,
+      marketplaceIds: ["US", "CA", "MX"],
+    },
+    {
+      id: "conn_sp_eu",
+      provider: "amazon-selling-partner",
+      name: "Ballistic Brands EU",
+      externalId: "A1XKPQ73MZ0E9V",
+      state: "connected",
+      connectedAt: now - 31 * DAY_MS,
+      marketplaceIds: ["UK", "DE"],
+    },
+    {
+      id: "conn_ads_us",
+      provider: "amazon-ads",
+      name: "Ballistic Brands Ads",
+      externalId: "3948571029384",
+      state: "connected",
+      connectedAt: now - 45 * DAY_MS,
+      marketplaceIds: ["US", "CA"],
+    },
+    {
+      id: "conn_ads_eu",
+      provider: "amazon-ads",
+      name: "Ballistic Brands Ads (EU)",
+      externalId: "8827361094552",
+      state: "error",
+      connectedAt: now - 22 * DAY_MS,
+      error: "Amazon revoked this authorisation. Reconnect to resume pulling Ads data.",
+      marketplaceIds: ["UK", "DE"],
+    },
+  ];
+}
+
+/** Rank used to collapse many connections into the two-slot summary. */
+const STATE_RANK: Record<ConnectionState, number> = {
+  connected: 3,
+  pending: 2,
+  error: 1,
+  disconnected: 0,
+};
+
+function toAccount(c: MockConnection): AmazonAccount {
+  const account: AmazonAccount = {
+    id: c.id,
+    provider: c.provider,
+    name: c.name,
+    externalId: c.externalId,
+    marketplaces: MARKETPLACES.filter((m) => c.marketplaceIds.includes(m.id)),
+    state: c.state,
+  };
+  if (c.connectedAt !== undefined) account.connectedAt = c.connectedAt;
+  if (c.error) account.error = c.error;
+  return account;
+}
+
+/** Same collapse rule as RealBackend.getConnectionStatus — healthiest wins. */
+function summarize(connections: MockConnection[]): ConnectionStatus {
+  const status: ConnectionStatus = {
+    sellerCentral: { state: "disconnected" },
+    ads: { state: "disconnected" },
+  };
+  for (const c of connections) {
+    const slot = c.provider === "amazon-ads" ? status.ads : status.sellerCentral;
+    if (STATE_RANK[c.state] <= STATE_RANK[slot.state] && slot.state !== "disconnected") continue;
+    slot.state = c.state;
+    slot.accountName = c.name;
+    if (c.connectedAt !== undefined) slot.connectedAt = c.connectedAt;
+    else delete slot.connectedAt;
+  }
+  return status;
+}
 
 const DATE_RANGE_FACTOR: Record<DateRangePreset, number> = {
   "last-7": 0.25,
@@ -372,8 +493,20 @@ export class MockBackend implements BackendClient {
   private async state(): Promise<MockState> {
     if (this.stateCache) return this.stateCache;
     const stored = await storageGet<Partial<MockState>>(STORAGE_KEYS.mockState);
-    this.stateCache = normalize(stored);
+    const s = normalize(stored);
+    // Already signed in but never seeded — an install carrying pre-2026-08-12
+    // state, whose two-slot connections object normalize() just dropped. Mint
+    // the fixture now rather than showing that user an empty Accounts tab.
+    this.seedIfNeeded(s);
+    this.stateCache = s;
     return this.stateCache;
+  }
+
+  /** Mint the demo connections once per identity. See seedConnections(). */
+  private seedIfNeeded(s: MockState): void {
+    if (s.connectionsSeeded || s.session === null) return;
+    s.connections = seedConnections(Date.now());
+    s.connectionsSeeded = true;
   }
 
   private async save(): Promise<void> {
@@ -397,6 +530,11 @@ export class MockBackend implements BackendClient {
       avatarUrl: profile?.picture,
       createdAt: Date.now(),
     };
+    // The demo persona's Amazon connections are minted with the identity that
+    // owns them, not baked into EMPTY_STATE: a signed-out mock has to keep
+    // answering "no connections" so the empty states stay reachable, and the
+    // analytics harness drives connect flows without ever signing in.
+    this.seedIfNeeded(s);
     await this.save();
     return s.session;
   }
@@ -451,54 +589,64 @@ export class MockBackend implements BackendClient {
 
   async getConnectionStatus(): Promise<ConnectionStatus> {
     const s = await this.state();
-    return s.connections;
+    return summarize(s.connections);
   }
 
+  /**
+   * The consent popup came back green. Mirrors the real backend: a broken
+   * connection the user just re-authorised heals, and anything else is a NEW
+   * connection appended to the list — which is what makes "+ Add another
+   * Amazon account" actually add one in mock mode.
+   */
   async completeConnect(provider: ConnectProvider): Promise<ConnectionStatus> {
     await delay(500);
     const s = await this.state();
-    const target = provider === "amazon-selling-partner" ? s.connections.sellerCentral : s.connections.ads;
-    target.state = "connected";
-    target.accountName = provider === "amazon-selling-partner" ? "Ballistic Brands (US)" : "Ballistic Brands Ads";
-    target.connectedAt = Date.now();
+    const broken = s.connections.find((c) => c.provider === provider && c.state !== "connected");
+    if (broken) {
+      broken.state = "connected";
+      broken.connectedAt = Date.now();
+      delete broken.error;
+    } else {
+      const n = s.connections.filter((c) => c.provider === provider).length + 1;
+      const ads = provider === "amazon-ads";
+      s.connections.push({
+        id: id(ads ? "conn_ads" : "conn_sp"),
+        provider,
+        name: ads ? `Ballistic Brands Ads ${n}` : `Ballistic Brands ${n}`,
+        externalId: ads ? `39485710293${n}` : `A2VQ8KDL91NRT${n}`,
+        state: "connected",
+        connectedAt: Date.now(),
+        marketplaceIds: ["US", "CA", "MX"],
+      });
+    }
     await this.save();
-    return s.connections;
+    return summarize(s.connections);
   }
 
+  /** Provider-wide: drops every connection for it, same as the real DELETE loop. */
   async disconnect(provider: ConnectProvider): Promise<ConnectionStatus> {
     await delay(600);
     const s = await this.state();
-    const target = provider === "amazon-selling-partner" ? s.connections.sellerCentral : s.connections.ads;
-    target.state = "disconnected";
-    delete target.accountName;
-    delete target.connectedAt;
+    s.connections = s.connections.filter((c) => c.provider !== provider);
     await this.save();
-    return s.connections;
+    return summarize(s.connections);
+  }
+
+  async disconnectAccount(connectionId: string): Promise<void> {
+    await delay(600);
+    const s = await this.state();
+    s.connections = s.connections.filter((c) => c.id !== connectionId);
+    await this.save();
+  }
+
+  async listConnections(): Promise<AmazonAccount[]> {
+    await delay(280);
+    const s = await this.state();
+    return s.connections.map(toAccount);
   }
 
   async listAccounts(): Promise<AmazonAccount[]> {
-    await delay(280);
-    const s = await this.state();
-    const accounts: AmazonAccount[] = [];
-    if (s.connections.sellerCentral.state === "connected") {
-      accounts.push({
-        id: "acct_sp_main",
-        provider: "amazon-selling-partner",
-        name: s.connections.sellerCentral.accountName ?? "Seller Central",
-        externalId: "A2VQ8KDL91NRT4",
-        marketplaces: MARKETPLACES.slice(0, 3),
-      });
-    }
-    if (s.connections.ads.state === "connected") {
-      accounts.push({
-        id: "acct_ads_main",
-        provider: "amazon-ads",
-        name: s.connections.ads.accountName ?? "Amazon Ads",
-        externalId: "3948571029384",
-        marketplaces: MARKETPLACES.slice(0, 3),
-      });
-    }
-    return accounts;
+    return (await this.listConnections()).filter((a) => a.state === "connected");
   }
 
   // ----- syncs -----
@@ -773,10 +921,11 @@ export class MockBackend implements BackendClient {
       plan: "free",
       syncsUsed: s.syncs.length,
       syncsLimit: 2,
-      accountsUsed:
-        (s.connections.sellerCentral.state === "connected" ? 1 : 0) +
-        (s.connections.ads.state === "connected" ? 1 : 0),
-      accountsLimit: 2,
+      // CONNECTED only — a meter that counted a revoked connection would
+      // charge the user for capacity they don't have. Settings → Accounts
+      // shows all of them; this number is deliberately the smaller one.
+      accountsUsed: s.connections.filter((c) => c.state === "connected").length,
+      accountsLimit: 5,
       rowsUsed: s.runs.reduce((sum, r) => sum + r.rows, 0),
       rowsLimit: 50_000,
       periodResetsAt: reset,
@@ -835,7 +984,16 @@ function normalize(stored: Partial<MockState> | undefined): MockState {
   return {
     session: stored.session ?? base.session,
     sheetAccess: stored.sheetAccess ?? base.sheetAccess,
-    connections: stored.connections ?? base.connections,
+    // Pre-2026-08-12 builds stored the two-slot ConnectionStatus OBJECT here.
+    // There is nothing worth migrating out of it (these are fixtures, not user
+    // data), so it is discarded and `connectionsSeeded` stays false — the next
+    // sign-in mints the current fixture. Only a real list survives.
+    connections: Array.isArray(stored.connections)
+      ? stored.connections.filter((c): c is MockConnection => typeof c?.id === "string")
+      : base.connections,
+    connectionsSeeded: Array.isArray(stored.connections)
+      ? stored.connectionsSeeded === true
+      : false,
     syncs: (stored.syncs ?? []).filter((s): s is Sync => Array.isArray(s?.sources)),
     runs: stored.runs ?? [],
     agentHistory: (stored.agentHistory ?? []).filter((m) => typeof m?.id === "string"),
