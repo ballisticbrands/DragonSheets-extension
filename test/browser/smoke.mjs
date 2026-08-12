@@ -129,7 +129,13 @@ const geom = await page.evaluate(() => {
   };
 });
 trail.push({geometry:geom});
-assert('panel starts BELOW Google\'s toolbar', geom.panelTop >= geom.toolbarBottom, JSON.stringify(geom));
+// The offset is a fixed 100px by choice (src/content/top-offset.ts): a constant
+// cannot be broken by Google reshuffling its DOM, and when it is wrong it is
+// wrong visibly and slightly rather than silently. Assert BOTH the constant and
+// the property it exists to guarantee — if Sheets' chrome ever grows past it,
+// the second assertion fails and names the real problem.
+assert('panel starts at the fixed 100px offset', geom.panelTop === 100, JSON.stringify(geom));
+assert('…which clears Google\'s toolbar', geom.panelTop >= geom.toolbarBottom, JSON.stringify(geom));
 assert('panel still runs to the bottom of the viewport',
   Math.abs(geom.panelBottom - geom.viewportHeight) <= 1, JSON.stringify(geom));
 assert('Google\'s Share button is clickable, not covered', !geom.shareCovered, JSON.stringify(geom));

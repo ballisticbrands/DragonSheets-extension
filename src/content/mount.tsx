@@ -27,10 +27,9 @@ export function mountSidebar(selectors: SelectorMap): void {
   host.setAttribute("style", "position:fixed;top:0;right:0;width:0;height:0;z-index:2147483001;");
   document.body.appendChild(host);
 
-  // Custom properties inherit through the shadow boundary, so measuring
-  // Google's chrome out here and reading it inside App.tsx needs no plumbing
-  // — and no React re-render on every resize tick.
-  installTopOffset(host, selectors);
+  // Custom properties inherit through the shadow boundary, so setting the
+  // offset out here and reading it inside App.tsx needs no plumbing.
+  installTopOffset(host);
 
   const shadow = host.attachShadow({ mode: "open" });
 

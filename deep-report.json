@@ -52,7 +52,7 @@
     },
     {
       "geometry": {
-        "panelTop": 80,
+        "panelTop": 100,
         "panelBottom": 800,
         "toolbarBottom": 80,
         "viewportHeight": 800,
@@ -73,7 +73,11 @@
   ],
   "checks": [
     {
-      "check": "panel starts BELOW Google's toolbar",
+      "check": "panel starts at the fixed 100px offset",
+      "ok": true
+    },
+    {
+      "check": "…which clears Google's toolbar",
       "ok": true
     },
     {
