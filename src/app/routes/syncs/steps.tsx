@@ -6,11 +6,13 @@
  * the 320px minimum sidebar width.
  */
 import { useMemo, useState } from "react";
+import { getBackend } from "../../../backend";
 import type {
   AmazonAccount,
   FilterOp,
   ReportCatalogEntry,
   SyncFilter,
+  SyncPreview,
   Usage,
 } from "../../../backend/types";
 import { formatNumber } from "../../../lib/format";
@@ -34,6 +36,7 @@ import {
   scheduleLabel,
   SCHEDULE_OPTIONS,
   splitColumnRef,
+  toSyncConfig,
   type WizardAction,
   type WizardState,
 } from "./model";
@@ -610,6 +613,97 @@ export function StepReview({ state, dispatch, reports, accounts }: StepProps) {
         value={scheduleLabel(state.schedule)}
         onEdit={() => dispatch({ type: "step", step: "destination" })}
       />
+      <PreviewPanel state={state} reports={reports} accounts={accounts} />
+    </div>
+  );
+}
+
+/**
+ * `POST /v1/sheets/preview` — a handful of real rows before anything is
+ * written. On demand, never on mount: it costs a BigQuery query, and review is
+ * also where someone lands just to change the schedule.
+ *
+ * Hard-capped at 50 rows server-side. Emphatically not an export path
+ * (docs/EXTENSION_API.md → "the extension is never in the data path").
+ */
+function PreviewPanel({
+  state,
+  reports,
+  accounts,
+}: Pick<StepProps, "state" | "reports" | "accounts">) {
+  const [preview, setPreview] = useState<SyncPreview | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setPreview(await getBackend().previewSync(toSyncConfig(state, reports, accounts), 10));
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : "Couldn't load a preview.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-200 px-3 py-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <SectionLabel>Preview</SectionLabel>
+        <button
+          className="rounded text-[11.5px] font-medium text-forest underline underline-offset-2 focus:outline-none focus:ring-2 focus:ring-forest/30"
+          disabled={loading}
+          onClick={() => void load()}
+        >
+          {loading ? "Loading…" : preview ? "Refresh" : "Show 10 rows"}
+        </button>
+      </div>
+      {error ? <p className="mt-1 text-[11.5px] leading-snug text-red-600">{error}</p> : null}
+      {preview && preview.rows.length === 0 ? (
+        <p className="mt-1 text-[11.5px] leading-snug text-ink/50">
+          No rows match this configuration. Widen the date range or drop a
+          filter — as it stands the sync would write an empty tab.
+        </p>
+      ) : null}
+      {preview && preview.rows.length > 0 ? (
+        <div className="mt-1.5 overflow-x-auto">
+          <table className="w-full border-collapse text-[10.5px]">
+            <thead>
+              <tr>
+                {preview.columns.map((c) => (
+                  <th
+                    key={c}
+                    className="whitespace-nowrap border-b border-gray-200 px-1 py-0.5 text-left font-semibold text-ink/50"
+                  >
+                    {c}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {preview.rows.map((row, i) => (
+                <tr key={i}>
+                  {row.map((cell, j) => (
+                    <td
+                      key={j}
+                      className="whitespace-nowrap border-b border-gray-100 px-1 py-0.5 text-ink/70"
+                    >
+                      {cell === null ? "" : String(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {!preview && !error && !loading ? (
+        <p className="mt-1 text-[11.5px] leading-snug text-ink/40">
+          A sample of what this sync will write. Nothing reaches your sheet
+          until you create it.
+        </p>
+      ) : null}
     </div>
   );
 }
