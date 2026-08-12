@@ -20,7 +20,11 @@
  *   ✅ /v1/connections maps to the extension's ConnectionStatus, including the
  *      "syncing ⇒ pending" rule that stops a half-done connect from firing a
  *      conversion
- *   ✅ every /v1/sheets/* method throws NotImplementedYet rather than faking
+ *   ✅ every /v1/sheets/* endpoint maps both ways — catalog collapse, column
+ *      re-qualification, filter/date/calculated-column translation, the
+ *      202-means-queued rule, and `has_access` ⇒ `granted`
+ *   ✅ the AGENT (the one surface with no backend) still refuses rather than
+ *      faking
  *
  *   ❌ it does NOT talk to api.getdragonbot.com, and it does NOT run Google's
  *      consent screen. `fetch` and `chrome.identity` are stubs; whether Google
@@ -597,17 +601,17 @@ async function testRealBackend(): Promise<void> {
   check("the connection id is the account id — reconcileConnectionActivations dedupes on it",
     accounts[0]!.id === "conn_sp");
 
-  // --- the honest gaps ---
+  // --- the remaining honest gap: the AGENT, which has no backend at all ---
+  //
+  // Everything under /v1/sheets/* shipped on 2026-08-10 and is exercised in
+  // section 6. The agent did not: its writes still refuse rather than fake an
+  // answer, but they refuse with a sentence written for a seller, because the
+  // Agent screen renders a thrown message straight into its error slot.
   const gaps: Array<[string, () => Promise<unknown>]> = [
-    ["listSyncs", () => backend.listSyncs()],
-    ["createSync", () => backend.createSync({} as never)],
-    ["runSync", () => backend.runSync("sync_1")],
-    ["listReports", () => backend.listReports()],
-    ["listTemplates", () => backend.listTemplates()],
-    ["checkSheetAccess", () => backend.checkSheetAccess("1AbC")],
-    ["getServiceAccountEmail", () => backend.getServiceAccountEmail()],
     ["sendAgentMessage", () => backend.sendAgentMessage("hi")],
-    ["getUsage", () => backend.getUsage()],
+    ["continueAgent", () => backend.continueAgent("tok")],
+    ["resolveAgentProposal", () => backend.resolveAgentProposal("p", "applied")],
+    ["materializeTemplate", () => backend.materializeTemplate("tpl-tacos")],
   ];
   let allThrew = true;
   for (const [name, fn] of gaps) {
@@ -622,15 +626,472 @@ async function testRealBackend(): Promise<void> {
       }
     }
   }
-  check(
-    "every not-yet-built endpoint throws NotImplementedYet instead of faking data",
-    allThrew
+  check("the agent endpoints throw NotImplementedYet instead of faking data", allThrew);
+
+  await expectThrows(
+    "…and the sentence is a product one, not 'Not built yet: POST /v1/sheets/agent'",
+    () => backend.sendAgentMessage("hi"),
+    /^The AI agent isn't switched on yet\./
   );
+
+  // Mount-time READS must not reject: an unhandled rejection there leaves the
+  // Agent screen on a spinner and prints a console error the smoke test counts.
+  check("getAgentHistory() answers with an empty transcript rather than rejecting",
+    (await backend.getAgentHistory()).length === 0);
+  check("getAgentProposal() answers null rather than rejecting",
+    (await backend.getAgentProposal("p")) === null);
+  await backend.cancelAgent("tok");
+  await backend.clearAgentHistory();
+  check("cancel/clear are no-ops, not a second error", true);
+  check("listTemplates() is empty (mock template ids don't exist in the live catalog)",
+    (await backend.listTemplates()).length === 0);
 
   // --- sign-out ---
   nextReplies = [{ status: 204 }];
   await backend.signOut();
   check("signOut() drops the stored bearer", store.get(STORAGE_KEYS.authToken) === undefined);
+}
+
+// ─── 6. RealBackend × /v1/sheets/* ────────────────────────────────────────
+//
+// The endpoints that shipped on 2026-08-10 and that RealBackend stubbed until
+// 2026-08-12 — the bug that rendered a blank service-account email on the
+// share screen. Every assertion here is against the contract in
+// sellerconnect/docs/EXTENSION_API.md, including its "M3 implementation
+// notes": filters carry a BARE column name, date ranges are `last_N_days`
+// presets, and a calculated column is `kind: "formula"` with an `expression`.
+
+async function testSheetsEndpoints(): Promise<void> {
+  group("6. RealBackend — /v1/sheets/* (catalog, preview, syncs, runs, access)");
+  reset();
+
+  // RealBackend scopes the sync list to the spreadsheet the sidebar is in.
+  (globalThis as unknown as { location: { href: string } }).location = {
+    href: "https://docs.google.com/spreadsheets/d/SHEET_HERE/edit#gid=0",
+  };
+
+  const backend = new RealBackend();
+  swHandler = async (call) =>
+    apiFetch({
+      method: call.method as "GET",
+      path: call.path,
+      body: call.body,
+      anonymous: call.anonymous,
+    });
+  await writeAuthToken("sc_live_session", 3600);
+
+  // ── GET /access — the blocker ──────────────────────────────────────────
+  captured = [];
+  nextReplies = [
+    {
+      status: 200,
+      body: {
+        has_access: false,
+        service_account_email: "dragonbot@dragonbot-487712.iam.gserviceaccount.com",
+        reason: "Share this spreadsheet with dragonbot@… as an Editor, then check again.",
+      },
+    },
+  ];
+  const denied = await backend.checkSheetAccess("1AbC");
+  check(
+    "has_access maps to `granted` — the field the share screen actually reads",
+    denied.granted === false,
+    JSON.stringify(denied)
+  );
+  check(
+    "a DENIED answer still carries the address to share with (the whole point of the screen)",
+    denied.serviceAccountEmail === "dragonbot@dragonbot-487712.iam.gserviceaccount.com"
+  );
+  check("…and the backend's `reason` is surfaced, not swallowed", /as an Editor/.test(denied.reason ?? ""));
+  check(
+    "the spreadsheet id goes on the query string",
+    captured[0]!.url.endsWith("/v1/sheets/access?spreadsheet_id=1AbC"),
+    captured[0]!.url
+  );
+
+  nextReplies = [
+    { status: 200, body: { has_access: true, service_account_email: "dragonbot@x.iam.gserviceaccount.com" } },
+  ];
+  check("a GRANTED answer maps to granted:true", (await backend.checkSheetAccess("1AbC")).granted === true);
+
+  nextReplies = [
+    { status: 200, body: { has_access: false, service_account_email: "dragonbot@x.iam.gserviceaccount.com" } },
+  ];
+  check(
+    "getServiceAccountEmail() returns the address even when access is denied",
+    (await backend.getServiceAccountEmail("1AbC")) === "dragonbot@x.iam.gserviceaccount.com"
+  );
+
+  // Sheets not configured server-side: the backend answers 200 with a null
+  // address. Returning "" here is what rendered the blank box; throw instead
+  // so the UI shows the reason.
+  nextReplies = [
+    {
+      status: 200,
+      body: {
+        has_access: false,
+        service_account_email: null,
+        reason: "Google Sheets isn't set up on this server yet.",
+      },
+    },
+  ];
+  await expectThrows(
+    "a null address throws the server's reason rather than resolving to an empty string",
+    () => backend.getServiceAccountEmail("1AbC"),
+    /Google Sheets isn't set up on this server yet\./
+  );
+
+  // ── GET /catalog ───────────────────────────────────────────────────────
+  captured = [];
+  nextReplies = [
+    {
+      status: 200,
+      body: {
+        reports: [
+          {
+            id: "sales_and_traffic_by_asin",
+            label: "Sales And Traffic By ASIN",
+            source: "spapi",
+            connection_id: "conn_a",
+            connection_name: "Ballistic Brands (US)",
+            date_column: "date",
+            row_estimate: 1000,
+            join_keys: ["asin", "date"],
+            columns: [
+              { name: "asin", label: "ASIN", type: "STRING" },
+              { name: "units_ordered", label: "Units Ordered", type: "INT64" },
+            ],
+          },
+          {
+            id: "sales_and_traffic_by_asin",
+            label: "Sales And Traffic By ASIN",
+            source: "spapi",
+            connection_id: "conn_b",
+            connection_name: "Ballistic Brands (CA)",
+            date_column: "date",
+            row_estimate: 400,
+            join_keys: ["asin", "date"],
+            columns: [
+              { name: "asin", label: "ASIN", type: "STRING" },
+              { name: "sessions", label: "Sessions", type: "INT64" },
+            ],
+          },
+          {
+            id: "sp_advertised_product",
+            label: "SP Advertised Product",
+            source: "ads",
+            connection_id: "conn_ads",
+            connection_name: "BB Ads",
+            date_column: "date",
+            row_estimate: null,
+            join_keys: ["advertisedAsin"],
+            columns: [{ name: "spend", label: "Spend", type: "NUMERIC" }],
+          },
+        ],
+      },
+    },
+  ];
+  const reports = await backend.listReports();
+  check("catalog hits GET /v1/sheets/catalog", captured[0]!.url.endsWith("/v1/sheets/catalog"));
+  check(
+    "one entry per (report × connection) collapses to one entry per REPORT",
+    reports.length === 2,
+    JSON.stringify(reports.map((r) => r.id))
+  );
+  const st = reports.find((r) => r.id === "sales_and_traffic_by_asin")!;
+  check("row estimates sum across the connections that hold the report", st.rowEstimate === 1400, String(st.rowEstimate));
+  check(
+    "columns union across connections (asin + units_ordered + sessions)",
+    st.fields.length === 3 && st.fields.map((f) => f.id).join(",") === "asin,units_ordered,sessions",
+    st.fields.map((f) => f.id).join(",")
+  );
+  check("BigQuery types map onto the UI's own", st.fields[0]!.type === "string" && st.fields[1]!.type === "number");
+  check("the humanized label becomes the field name used in formulas", st.fields[1]!.name === "Units Ordered");
+  check("`spapi` maps to the UI's `seller-central`, `ads` stays `ads`",
+    st.source === "seller-central" && reports.find((r) => r.id === "sp_advertised_product")!.source === "ads");
+  check("the connection names become the description a seller reads",
+    /Ballistic Brands \(US\), Ballistic Brands \(CA\)/.test(st.description), st.description);
+  check("a null row_estimate doesn't become NaN",
+    reports.find((r) => r.id === "sp_advertised_product")!.rowEstimate === 0);
+
+  // ── POST /syncs ────────────────────────────────────────────────────────
+  const config = {
+    name: "P&L by SKU",
+    sources: [
+      { reportId: "sales_and_traffic_by_asin", accountId: "conn_a", marketplaceIds: ["ATVPDKIKX0DER"] },
+      { reportId: "sp_advertised_product", accountId: "conn_ads", marketplaceIds: [] },
+      // A source nobody took a column from: the backend rejects an empty
+      // `columns` array, so it must not travel at all.
+      { reportId: "unused_report", accountId: "conn_a", marketplaceIds: [] },
+    ],
+    primaryReportId: "sales_and_traffic_by_asin",
+    joinKeys: ["asin"],
+    columns: [
+      "sales_and_traffic_by_asin:asin",
+      "sales_and_traffic_by_asin:units_ordered",
+      "sp_advertised_product:spend",
+    ],
+    calculatedColumns: [
+      { id: "cc_1", name: "Cost per unit", kind: "formula" as const, formula: "[Spend] / [Units Ordered]" },
+    ],
+    dateRange: "last-30" as const,
+    filters: [
+      { id: "f1", column: "sales_and_traffic_by_asin:asin", op: "contains" as const, value: "B0" },
+      { id: "f2", column: "sales_and_traffic_by_asin:units_ordered", op: "gt" as const, value: "12" },
+    ],
+    schedule: "daily" as const,
+    sheetName: "DragonSheets — P&L",
+    createNewSheet: true,
+  };
+
+  const wireSync = {
+    id: "sync_1",
+    name: "P&L by SKU",
+    spreadsheet_id: "SHEET_HERE",
+    tab_name: "DragonSheets — P&L",
+    sources: [
+      {
+        report_id: "sales_and_traffic_by_asin",
+        connection_id: "conn_a",
+        columns: ["asin", "units_ordered"],
+      },
+      { report_id: "sp_advertised_product", connection_id: "conn_ads", columns: ["spend"] },
+    ],
+    primary_report_id: "sales_and_traffic_by_asin",
+    join_keys: ["asin"],
+    calculated_columns: [
+      { name: "Cost per unit", kind: "formula", expression: "[Spend] / [Units Ordered]" },
+    ],
+    filters: [
+      { column: "asin", op: "contains", value: "B0" },
+      { column: "units_ordered", op: "gt", value: 12 },
+    ],
+    date_range: { preset: "last_30_days" },
+    schedule: "daily",
+    status: "active",
+    created_at: "2026-08-11T10:00:00Z",
+    updated_at: "2026-08-11T10:00:00Z",
+    last_run: { at: "2026-08-12T06:00:00Z", status: "ok", rows: 12043 },
+  };
+
+  captured = [];
+  nextReplies = [{ status: 201, body: wireSync }];
+  const created = await backend.createSync(config);
+  const body = captured[0]!.body as Record<string, never>;
+  check("createSync POSTs to /v1/sheets/syncs", captured[0]!.url.endsWith("/v1/sheets/syncs"));
+  check(
+    "the spreadsheet id comes from the page URL, not from the caller",
+    (body as unknown as { spreadsheet_id: string }).spreadsheet_id === "SHEET_HERE",
+    JSON.stringify(body.spreadsheet_id)
+  );
+  check("sheetName becomes tab_name", (body as unknown as { tab_name: string }).tab_name === "DragonSheets — P&L");
+  const sentSources = body.sources as unknown as Array<{ report_id: string; connection_id?: string; columns: string[] }>;
+  check(
+    "flat `<reportId>:<field>` columns regroup under the source that owns them",
+    sentSources.length === 2 &&
+      sentSources[0]!.columns.join(",") === "asin,units_ordered" &&
+      sentSources[1]!.columns.join(",") === "spend",
+    JSON.stringify(sentSources)
+  );
+  check("a source with no selected columns is dropped (the backend requires ≥1)",
+    sentSources.every((s) => s.report_id !== "unused_report"));
+  check("the account id travels as connection_id", sentSources[0]!.connection_id === "conn_a");
+  const sentFilters = body.filters as unknown as Array<{ column: string; op: string; value: unknown }>;
+  check(
+    "filters carry the BARE column name — the backend routes them to the owning source",
+    sentFilters[0]!.column === "asin",
+    JSON.stringify(sentFilters)
+  );
+  check(
+    "a `gt` filter value is sent as a NUMBER (a string would compare lexically)",
+    sentFilters[1]!.value === 12 && typeof sentFilters[1]!.value === "number"
+  );
+  check("…while `contains` stays a string", sentFilters[0]!.value === "B0");
+  check(
+    "the date preset is translated to the backend's spelling",
+    (body.date_range as unknown as { preset: string }).preset === "last_30_days"
+  );
+  const sentCalcs = body.calculated_columns as unknown as Array<{ kind: string; expression: string }>;
+  check(
+    "a calculated column becomes { kind:'formula', expression } — the only shape the wire has",
+    sentCalcs[0]!.kind === "formula" && sentCalcs[0]!.expression === "[Spend] / [Units Ordered]"
+  );
+  check("marketplaceIds do NOT travel (the backend scopes by connection)",
+    !JSON.stringify(body).includes("ATVPDKIKX0DER"));
+
+  // ── the round trip back ────────────────────────────────────────────────
+  check("the created sync's id and name come back", created.id === "sync_1" && created.name === "P&L by SKU");
+  check(
+    "wire columns re-qualify to `<reportId>:<field>`",
+    created.columns.join("|") ===
+      "sales_and_traffic_by_asin:asin|sales_and_traffic_by_asin:units_ordered|sp_advertised_product:spend",
+    created.columns.join("|")
+  );
+  check("tab_name becomes sheetName", created.sheetName === "DragonSheets — P&L");
+  check("status:'active' means NOT paused", created.paused === false);
+  check("last_run.status drives the sync's status badge", created.status === "ok");
+  check("last_run.rows becomes rowCount", created.rowCount === 12043);
+  check("last_run.at becomes lastRunAt (ms)", created.lastRunAt === Date.parse("2026-08-12T06:00:00Z"));
+  check("the date preset comes back as the wizard's own spelling", created.dateRange === "last-30");
+  check(
+    "a bare filter column is re-qualified against the source that owns it",
+    created.filters[0]!.column === "sales_and_traffic_by_asin:asin" &&
+      created.filters[1]!.column === "sales_and_traffic_by_asin:units_ordered",
+    JSON.stringify(created.filters)
+  );
+  check("a numeric filter value round-trips back to the UI's string form", created.filters[1]!.value === "12");
+  check("calculated columns come back as formulas with stable ids",
+    created.calculatedColumns[0]!.formula === "[Spend] / [Units Ordered]" &&
+      created.calculatedColumns[0]!.id === "cc_0");
+
+  // ── the config shapes the wire cannot express ──────────────────────────
+  await expectThrows(
+    "a TEXT constant column is refused loudly rather than silently dropped",
+    () =>
+      backend.createSync({
+        ...config,
+        calculatedColumns: [{ id: "c", name: "Brand", kind: "constant", constant: "Acme" }],
+      }),
+    /text constants aren't supported/i
+  );
+  nextReplies = [{ status: 201, body: wireSync }];
+  captured = [];
+  await backend.createSync({
+    ...config,
+    calculatedColumns: [{ id: "c", name: "Target ACOS", kind: "constant", constant: "22.5" }],
+  });
+  check(
+    "…but a NUMERIC constant is expressible, so it converts to a literal formula",
+    ((captured[0]!.body as Record<string, never>).calculated_columns as unknown as Array<{ expression: string }>)[0]!
+      .expression === "22.5"
+  );
+  await expectThrows(
+    "a `virtual` (reserved) column is refused — the server has no way to leave a gap",
+    () =>
+      backend.createSync({
+        ...config,
+        calculatedColumns: [{ id: "c", name: "Notes", kind: "virtual" }],
+      }),
+    /isn't supported yet/i
+  );
+
+  // ── GET /syncs — scoped to the spreadsheet on screen ───────────────────
+  nextReplies = [
+    {
+      status: 200,
+      body: {
+        syncs: [
+          wireSync,
+          { ...wireSync, id: "sync_elsewhere", spreadsheet_id: "SOME_OTHER_SHEET" },
+        ],
+      },
+    },
+  ];
+  const listed = await backend.listSyncs();
+  check(
+    "listSyncs() hides syncs that write into a DIFFERENT spreadsheet",
+    listed.length === 1 && listed[0]!.id === "sync_1",
+    JSON.stringify(listed.map((s) => s.id))
+  );
+
+  // ── PATCH ──────────────────────────────────────────────────────────────
+  captured = [];
+  nextReplies = [{ status: 200, body: { ...wireSync, status: "paused" } }];
+  const paused = await backend.setSyncPaused("sync_1", true);
+  check("pausing PATCHes status:'paused'",
+    captured[0]!.method === "PATCH" &&
+      (captured[0]!.body as { status: string }).status === "paused");
+  check("…and comes back as paused:true", paused.paused === true);
+
+  captured = [];
+  nextReplies = [{ status: 200, body: wireSync }];
+  await backend.updateSync("sync_1", { schedule: "hourly" });
+  check(
+    "a one-field patch sends ONLY that field (an undefined key fails validation)",
+    JSON.stringify(captured[0]!.body) === '{"schedule":"hourly"}',
+    JSON.stringify(captured[0]!.body)
+  );
+
+  // ── run + runs ─────────────────────────────────────────────────────────
+  captured = [];
+  nextReplies = [{ status: 202, body: { run_id: "run_9" } }];
+  const run = await backend.runSync("sync_1");
+  check("runSync POSTs to /syncs/:id/run", captured[0]!.url.endsWith("/v1/sheets/syncs/sync_1/run"));
+  check(
+    "202 means QUEUED, so the run is reported as running rather than finished",
+    run.id === "run_9" && run.status === "running" && run.syncId === "sync_1",
+    JSON.stringify(run)
+  );
+
+  nextReplies = [
+    {
+      status: 200,
+      body: {
+        runs: [
+          { id: "run_9", started_at: "2026-08-12T06:00:00Z", finished_at: null, status: "running", rows: 0 },
+          {
+            id: "run_8", started_at: "2026-08-11T06:00:00Z", finished_at: "2026-08-11T06:00:20Z",
+            status: "error", rows: 0, error: "Amazon's report wasn't ready.",
+          },
+        ],
+      },
+    },
+  ];
+  const runs = await backend.listSyncRuns("sync_1");
+  check("a running run has no finishedAt", runs[0]!.status === "running" && runs[0]!.finishedAt === undefined);
+  check("a failed run carries the backend's sentence verbatim",
+    runs[1]!.status === "error" && runs[1]!.message === "Amazon's report wasn't ready.");
+
+  // ── POST /preview ──────────────────────────────────────────────────────
+  captured = [];
+  nextReplies = [{ status: 200, body: { columns: ["asin", "units"], rows: [["B0X", 12]], truncated: true } }];
+  const preview = await backend.previewSync(config, 500);
+  check("preview POSTs to /v1/sheets/preview", captured[0]!.url.endsWith("/v1/sheets/preview"));
+  check(
+    "the row limit is clamped to the server's hard cap of 50 before it is sent",
+    (captured[0]!.body as { limit: number }).limit === 50,
+    String((captured[0]!.body as { limit: number }).limit)
+  );
+  check("the preview body carries no destination (it writes nothing)",
+    !("tab_name" in (captured[0]!.body as object)) && !("spreadsheet_id" in (captured[0]!.body as object)));
+  check("rows and the truncation flag come straight back",
+    preview.rows.length === 1 && preview.truncated === true);
+
+  // ── errors keep their seller-facing sentence ───────────────────────────
+  nextReplies = [
+    {
+      status: 409,
+      body: {
+        error: 'The tab "P&L" is already used by another sync. Pick a different tab name.',
+        error_code: "tab_already_synced",
+      },
+    },
+  ];
+  await expectThrows(
+    "a 409 tab_already_synced reaches the wizard verbatim",
+    () => backend.createSync(config),
+    /already used by another sync/
+  );
+
+  nextReplies = [{ status: 404, body: { error: "We couldn't find that sync.", error_code: "sync_not_found" } }];
+  check("getSync() turns a 404 into null — an answer, not a failure",
+    (await backend.getSync("sync_gone")) === null);
+
+  // ── usage is derived, never invented, and never rejects ────────────────
+  nextReplies = [
+    { status: 200, body: { syncs: [wireSync] } },
+    { status: 200, body: [] },
+  ];
+  const usage = await backend.getUsage();
+  check(
+    "getUsage() counts real syncs instead of throwing (a rejection hangs the wizard)",
+    usage.syncsUsed === 1 && usage.rowsUsed === 12043,
+    JSON.stringify(usage)
+  );
+  check("…with limits set high enough not to block against a backend that enforces none",
+    usage.syncsLimit > usage.syncsUsed);
+
+  delete (globalThis as unknown as { location?: unknown }).location;
 }
 
 // ─── 5. the mock/real seam ────────────────────────────────────────────────
@@ -690,6 +1151,7 @@ async function main(): Promise<void> {
   testIdToken();
   await testApiFetch();
   await testRealBackend();
+  await testSheetsEndpoints();
   await testSeam();
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

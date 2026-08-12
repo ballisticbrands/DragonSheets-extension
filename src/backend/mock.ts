@@ -27,6 +27,7 @@ import type {
   Sync,
   SyncConfig,
   SyncDraft,
+  SyncPreview,
   SyncRun,
   SyncSource,
   Template,
@@ -408,19 +409,24 @@ export class MockBackend implements BackendClient {
 
   // ----- sheet access -----
 
-  async getServiceAccountEmail(): Promise<string> {
+  async getServiceAccountEmail(_spreadsheetId?: string): Promise<string> {
     return SERVICE_ACCOUNT_EMAIL;
   }
 
   async checkSheetAccess(spreadsheetId: string): Promise<SheetAccess> {
     await delay(900);
     const s = await this.state();
-    // Mock behaviour: the first explicit "Check access" click grants access
-    // (the real implementation asks the backend to touch the sheet as the
-    // service account — Phase 8.2).
+    // Mock behaviour: any check grants access. Deliberately unchanged now that
+    // the sidebar gates on access at open time (App.tsx) — a mock that could
+    // answer "denied" would put the demo/QA build behind a share step nobody
+    // can satisfy without a real Google service account.
     s.sheetAccess[spreadsheetId] = true;
     await this.save();
-    return { granted: true, checkedAt: Date.now() };
+    return {
+      granted: true,
+      checkedAt: Date.now(),
+      serviceAccountEmail: SERVICE_ACCOUNT_EMAIL,
+    };
   }
 
   // ----- Amazon connections -----
@@ -589,6 +595,36 @@ export class MockBackend implements BackendClient {
     await delay(220);
     const s = await this.state();
     return s.runs.filter((r) => r.syncId === syncId);
+  }
+
+  /**
+   * Sample rows for the review step. Values are derived from each field's
+   * `sample` in the catalog, jittered per row so the preview looks like data
+   * rather than a repeated line — and obviously synthetic, which is the point
+   * of a mock.
+   */
+  async previewSync(config: SyncConfig, limit = 20): Promise<SyncPreview> {
+    await delay(700);
+    const fields = config.columns.map((ref) => {
+      const [reportId, fieldId] = [ref.slice(0, ref.indexOf(":")), ref.slice(ref.indexOf(":") + 1)];
+      const field = reportById(reportId)?.fields.find((f) => f.id === fieldId);
+      return { label: field?.name ?? fieldId, sample: field?.sample ?? "—", type: field?.type };
+    });
+    const count = Math.max(1, Math.min(50, limit));
+    const rows = Array.from({ length: count }, () =>
+      fields.map((f) => {
+        const n = Number(f.sample.replace(/[^0-9.-]/g, ""));
+        if (f.type !== "string" && f.type !== "date" && Number.isFinite(n) && n !== 0) {
+          return Math.round(n * (0.6 + Math.random() * 0.8) * 100) / 100;
+        }
+        return f.sample;
+      })
+    );
+    return {
+      columns: [...fields.map((f) => f.label), ...config.calculatedColumns.map((c) => c.name)],
+      rows: rows.map((r) => [...r, ...config.calculatedColumns.map(() => 0)]),
+      truncated: true,
+    };
   }
 
   // ----- reports -----

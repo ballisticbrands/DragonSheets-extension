@@ -23,6 +23,18 @@ export interface Session {
 export interface SheetAccess {
   granted: boolean;
   checkedAt: number;
+  /**
+   * The address the spreadsheet has to be shared with. The backend returns it
+   * on BOTH answers (granted and denied) so the share screen can always render
+   * something to copy — `null` only when the server itself has no Sheets
+   * credentials configured, which is a server problem, not a user one.
+   */
+  serviceAccountEmail?: string | null;
+  /**
+   * The backend's own seller-facing sentence explaining why access isn't
+   * available. Surfaced verbatim (docs/EXTENSION_API.md "Ground rules").
+   */
+  reason?: string;
 }
 
 // ---------- Amazon connections ----------
@@ -187,6 +199,18 @@ export interface SyncRun {
 /** A partially-specified sync — what templates and agent proposals hand to the wizard. */
 export type SyncDraft = Partial<SyncConfig>;
 
+/**
+ * A handful of real rows for the wizard's review step (`POST /v1/sheets/preview`,
+ * hard-capped at 50 rows server-side). Deliberately NOT an export path: the
+ * extension is never in the data path (docs/EXTENSION_API.md → "Ground rules").
+ */
+export interface SyncPreview {
+  columns: string[];
+  rows: Array<Array<string | number | boolean | null>>;
+  /** True when the underlying result set was larger than the cap. */
+  truncated: boolean;
+}
+
 // ---------- AI agent ----------
 
 export interface AgentProposal {
@@ -269,7 +293,13 @@ export interface BackendClient {
   signOut(): Promise<void>;
 
   // sheet access (service-account model — the extension holds NO Google scopes)
-  getServiceAccountEmail(): Promise<string>;
+  /**
+   * The share-with-me address. `spreadsheetId` is optional only because the
+   * mock has a fixed answer; the real endpoint is
+   * `GET /v1/sheets/access?spreadsheet_id=…`, so callers that have an id
+   * should always pass it.
+   */
+  getServiceAccountEmail(spreadsheetId?: string): Promise<string>;
   checkSheetAccess(spreadsheetId: string): Promise<SheetAccess>;
 
   // Amazon connections
@@ -291,6 +321,8 @@ export interface BackendClient {
   setSyncPaused(id: string, paused: boolean): Promise<Sync>;
   runSync(id: string): Promise<SyncRun>;
   listSyncRuns(id: string): Promise<SyncRun[]>;
+  /** Sample rows for the review step. `limit` is clamped to 50 server-side. */
+  previewSync(config: SyncConfig, limit?: number): Promise<SyncPreview>;
 
   // reports
   listReports(): Promise<ReportCatalogEntry[]>;

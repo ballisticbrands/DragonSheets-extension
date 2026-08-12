@@ -3,12 +3,17 @@
  *
  * ## Scope
  *
- * M1 (sign-in) and M2 (Amazon connect) only. Everything the sync loop needs
- * lives behind `/v1/sheets/*`, which does not exist yet, and every one of
- * those methods throws `NotImplementedYetError` **on purpose**. Returning
- * plausible fake data from a "real" client is the single worst thing this file
- * could do: a demo would look finished, a bug report would be unreproducible,
- * and nobody would notice the backend was missing until a customer did.
+ * M1 (sign-in), M2 (Amazon connect) and M3 (`/v1/sheets/*` — catalog, preview,
+ * sync CRUD, run, runs, access) are live and implemented here against the real
+ * endpoints.
+ *
+ * What is NOT live is the **agent**: the backend has no agent surface at all.
+ * Those methods still refuse to answer — returning plausible fake data from a
+ * "real" client is the single worst thing this file could do: a demo would
+ * look finished, a bug report would be unreproducible, and nobody would notice
+ * the backend was missing until a customer did. They refuse *politely* though,
+ * with a sentence written for a seller (`AGENT_UNAVAILABLE`), because the
+ * agent screen renders a thrown message straight into its error slot.
  *
  * ## No fetch here
  *
@@ -20,6 +25,18 @@
 import type { GoogleProfile } from "../lib/messages";
 import { MSG, type ApiMethod, type ApiResponseMessage } from "../lib/messages";
 import { OAUTH_RETURN_TO } from "./config";
+import {
+  fromWireRun,
+  fromWireSync,
+  toCatalogEntries,
+  toWirePreviewBody,
+  toWireSyncBody,
+  toWireSyncPatch,
+  type WireAccess,
+  type WireCatalogEntry,
+  type WireRun,
+  type WireSync,
+} from "./sheets-wire";
 import type {
   AgentMessage,
   AgentProposal,
@@ -37,6 +54,7 @@ import type {
   Sync,
   SyncConfig,
   SyncDraft,
+  SyncPreview,
   SyncRun,
   Template,
   Usage,
@@ -49,17 +67,26 @@ import type {
  */
 export class NotImplementedYetError extends Error {
   readonly endpoint: string;
-  constructor(endpoint: string) {
+  constructor(endpoint: string, message?: string) {
     super(
-      `Not built yet: ${endpoint}. DragonSheets' sync features need backend endpoints that aren't live — see docs/EXTENSION_API.md (M3).`
+      message ??
+        `Not built yet: ${endpoint}. DragonSheets' sync features need backend endpoints that aren't live — see docs/EXTENSION_API.md.`
     );
     this.name = "NotImplementedYet";
     this.endpoint = endpoint;
   }
 }
 
-function notImplemented(endpoint: string): never {
-  throw new NotImplementedYetError(endpoint);
+/**
+ * The sentence the agent screen shows. It is deliberately a *product*
+ * sentence, not a stack trace: the user did nothing wrong and there is a
+ * working path for them one screen away.
+ */
+export const AGENT_UNAVAILABLE =
+  "The AI agent isn't switched on yet. Build the sheet you want with the sync wizard in the meantime — it reaches exactly the same data.";
+
+function notImplemented(endpoint: string, message?: string): never {
+  throw new NotImplementedYetError(endpoint, message);
 }
 
 /** An error carrying the backend's own seller-facing sentence. */
@@ -207,12 +234,48 @@ export class RealBackend implements BackendClient {
 
   // ----- sheet access -----
 
-  async getServiceAccountEmail(): Promise<string> {
-    return notImplemented("GET /v1/sheets/access");
+  /**
+   * `GET /v1/sheets/access?spreadsheet_id=…`
+   *
+   * The one endpoint that answers two questions at once: *can* the service
+   * account open this sheet, and *which address* does the user have to share
+   * it with. The backend returns the address on both answers — including the
+   * denial — which is exactly what the share screen needs, because a user who
+   * has no access yet is precisely the user who needs the address.
+   */
+  private async accessWire(spreadsheetId: string): Promise<WireAccess> {
+    // The backend 400s on an empty id (`invalid_request`). "unknown" is what
+    // App.tsx uses when the URL has no spreadsheet in it; send it through and
+    // let the server answer "no access" — it still names the address, which is
+    // the part the UI cannot do without.
+    const id = spreadsheetId && spreadsheetId !== "unknown" ? spreadsheetId : "unknown";
+    return api<WireAccess>("GET", `/v1/sheets/access?spreadsheet_id=${encodeURIComponent(id)}`);
   }
 
-  async checkSheetAccess(_spreadsheetId: string): Promise<SheetAccess> {
-    return notImplemented("GET /v1/sheets/access");
+  async getServiceAccountEmail(spreadsheetId?: string): Promise<string> {
+    const res = await this.accessWire(spreadsheetId ?? "");
+    const email = res?.service_account_email ?? "";
+    if (!email) {
+      // Sheets isn't configured on the server. There is nothing for the user
+      // to copy and no amount of retrying will change that, so say so rather
+      // than rendering an empty box.
+      throw new Error(
+        res?.reason ??
+          "The server hasn't been given its Google Sheets credentials yet, so there's no address to share with. Contact support."
+      );
+    }
+    return email;
+  }
+
+  async checkSheetAccess(spreadsheetId: string): Promise<SheetAccess> {
+    const res = await this.accessWire(spreadsheetId);
+    return {
+      // `has_access` is the wire spelling; the UI reads `granted`.
+      granted: res?.has_access === true,
+      checkedAt: Date.now(),
+      serviceAccountEmail: res?.service_account_email ?? null,
+      ...(res?.reason ? { reason: res.reason } : {}),
+    };
   }
 
   // ----- Amazon connections -----
@@ -299,73 +362,169 @@ export class RealBackend implements BackendClient {
 
   // ----- syncs (M3: /v1/sheets/syncs) -----
 
+  /**
+   * A sync is scoped to a spreadsheet server-side, but the sidebar only ever
+   * shows the sheet it is injected into — so the list is filtered to the
+   * current spreadsheet. Anything else would offer to run a sync that writes
+   * into a document the user isn't looking at.
+   */
+  private currentSpreadsheetId(): string {
+    try {
+      const m = /\/spreadsheets\/d\/([^/]+)/.exec(location.href);
+      return m?.[1] ?? "";
+    } catch {
+      // No `location` (the unit harness runs this class under node).
+      return "";
+    }
+  }
+
   async listSyncs(): Promise<Sync[]> {
-    return notImplemented("GET /v1/sheets/syncs");
+    const res = await api<{ syncs?: WireSync[] }>("GET", "/v1/sheets/syncs");
+    const here = this.currentSpreadsheetId();
+    return (res?.syncs ?? [])
+      .filter((s) => (here ? s.spreadsheet_id === here : true))
+      .map(fromWireSync);
   }
-  async getSync(_id: string): Promise<Sync | null> {
-    return notImplemented("GET /v1/sheets/syncs/:id");
+
+  async getSync(id: string): Promise<Sync | null> {
+    try {
+      return fromWireSync(await api<WireSync>("GET", `/v1/sheets/syncs/${encodeURIComponent(id)}`));
+    } catch (err) {
+      // `sync_not_found` is an answer, not a failure — the caller renders an
+      // empty state for it.
+      if (err instanceof ApiError && err.status === 404) return null;
+      throw err;
+    }
   }
-  async createSync(_config: SyncConfig): Promise<Sync> {
-    return notImplemented("POST /v1/sheets/syncs");
+
+  async createSync(config: SyncConfig): Promise<Sync> {
+    const body = toWireSyncBody(config, this.currentSpreadsheetId());
+    return fromWireSync(await api<WireSync>("POST", "/v1/sheets/syncs", body));
   }
-  async updateSync(_id: string, _patch: SyncDraft): Promise<Sync> {
-    return notImplemented("PATCH /v1/sheets/syncs/:id");
+
+  /**
+   * PATCH takes the same field names as POST and validates the MERGED config,
+   * so a partial draft is safe to send as-is. Only the keys the caller
+   * actually set are included — sending `undefined` ones would fail schema
+   * validation with `invalid_request`.
+   */
+  async updateSync(id: string, patch: SyncDraft): Promise<Sync> {
+    const body = toWireSyncPatch(patch);
+    return fromWireSync(
+      await api<WireSync>("PATCH", `/v1/sheets/syncs/${encodeURIComponent(id)}`, body)
+    );
   }
-  async deleteSync(_id: string): Promise<void> {
-    return notImplemented("DELETE /v1/sheets/syncs/:id");
+
+  async deleteSync(id: string): Promise<void> {
+    await api<void>("DELETE", `/v1/sheets/syncs/${encodeURIComponent(id)}`);
   }
-  async setSyncPaused(_id: string, _paused: boolean): Promise<Sync> {
-    return notImplemented("PATCH /v1/sheets/syncs/:id");
+
+  async setSyncPaused(id: string, paused: boolean): Promise<Sync> {
+    return fromWireSync(
+      await api<WireSync>("PATCH", `/v1/sheets/syncs/${encodeURIComponent(id)}`, {
+        status: paused ? "paused" : "active",
+      })
+    );
   }
-  async runSync(_id: string): Promise<SyncRun> {
-    return notImplemented("POST /v1/sheets/syncs/:id/run");
+
+  /**
+   * `202 { run_id }` — the endpoint queues the run and returns immediately, so
+   * the run we hand back is the *started* state, not the finished one. The UI
+   * polls `listSyncRuns` for the outcome.
+   */
+  async runSync(id: string): Promise<SyncRun> {
+    const res = await api<{ run_id?: string }>(
+      "POST",
+      `/v1/sheets/syncs/${encodeURIComponent(id)}/run`
+    );
+    return {
+      id: res?.run_id ?? `run_${Date.now()}`,
+      syncId: id,
+      startedAt: Date.now(),
+      status: "running",
+      rows: 0,
+      message: "Queued — the sheet updates as soon as the rows are ready.",
+    };
   }
-  async listSyncRuns(_id: string): Promise<SyncRun[]> {
-    return notImplemented("GET /v1/sheets/syncs/:id/runs");
+
+  async listSyncRuns(id: string): Promise<SyncRun[]> {
+    const res = await api<{ runs?: WireRun[] }>(
+      "GET",
+      `/v1/sheets/syncs/${encodeURIComponent(id)}/runs`
+    );
+    return (res?.runs ?? []).map((r) => fromWireRun(r, id));
+  }
+
+  async previewSync(config: SyncConfig, limit = 20): Promise<SyncPreview> {
+    const res = await api<{
+      columns?: string[];
+      rows?: Array<Array<string | number | boolean | null>>;
+      truncated?: boolean;
+    }>("POST", "/v1/sheets/preview", toWirePreviewBody(config, limit));
+    return {
+      columns: res?.columns ?? [],
+      rows: res?.rows ?? [],
+      truncated: res?.truncated === true,
+    };
   }
 
   // ----- reports (M3: /v1/sheets/catalog) -----
 
   async listReports(): Promise<ReportCatalogEntry[]> {
-    return notImplemented("GET /v1/sheets/catalog");
+    const res = await api<{ reports?: WireCatalogEntry[] }>("GET", "/v1/sheets/catalog");
+    return toCatalogEntries(res?.reports ?? []);
   }
 
   // ----- AI agent (no endpoint designed yet) -----
+  //
+  // The reads answer emptily — an empty transcript IS the truth, and throwing
+  // from a mount-time read only produces an unhandled rejection and a screen
+  // stuck on a spinner. Anything that would need the model to actually run
+  // refuses, with AGENT_UNAVAILABLE, which the Agent screen renders inline.
 
   async sendAgentMessage(_content: string): Promise<AgentResult> {
-    return notImplemented("POST /v1/sheets/agent");
+    return notImplemented("POST /v1/sheets/agent", AGENT_UNAVAILABLE);
   }
   async continueAgent(_token: string): Promise<AgentResult> {
-    return notImplemented("POST /v1/sheets/agent");
+    return notImplemented("POST /v1/sheets/agent", AGENT_UNAVAILABLE);
   }
   async cancelAgent(_token: string): Promise<void> {
-    return notImplemented("POST /v1/sheets/agent");
+    // Nothing was started, so there is nothing to cancel. Refusing here would
+    // turn the Stop button into a second error.
   }
   async getAgentHistory(): Promise<AgentMessage[]> {
-    return notImplemented("GET /v1/sheets/agent");
+    return [];
   }
   async clearAgentHistory(): Promise<void> {
-    return notImplemented("DELETE /v1/sheets/agent");
+    // No history is stored server-side; clearing it is already true.
   }
   async getAgentProposal(_id: string): Promise<AgentProposal | null> {
-    return notImplemented("GET /v1/sheets/agent");
+    return null;
   }
   async resolveAgentProposal(_id: string, _status: "applied" | "discarded"): Promise<AgentProposal> {
-    return notImplemented("POST /v1/sheets/agent");
+    return notImplemented("POST /v1/sheets/agent", AGENT_UNAVAILABLE);
   }
 
   // ----- templates -----
 
   /**
-   * Templates are static copy today, but every one of them materialises into a
-   * sync that `createSync` cannot create and columns that `listReports`
-   * cannot name. Offering them here would be a dead end dressed as a feature.
+   * The templates in src/backend/catalog.ts name mock report ids
+   * (`sc-sales-traffic-asin`) and mock column ids. Against the live catalog —
+   * whose ids are real BigQuery table names — every one of them would
+   * materialise into a draft referencing columns that do not exist, and fail
+   * at `POST /syncs` with `invalid_source`.
+   *
+   * An empty gallery with an explanation (Templates.tsx) beats a gallery of
+   * cards that all fail on click.
    */
   async listTemplates(): Promise<Template[]> {
-    return notImplemented("GET /v1/sheets/catalog");
+    return [];
   }
-  async materializeTemplate(_id: string): Promise<SyncDraft> {
-    return notImplemented("GET /v1/sheets/catalog");
+  async materializeTemplate(id: string): Promise<SyncDraft> {
+    return notImplemented(
+      "GET /v1/sheets/catalog",
+      `Templates aren't available against live data yet (${id}). Build this one in the sync wizard instead.`
+    );
   }
 
   // ----- workspace / plan -----
@@ -386,7 +545,35 @@ export class RealBackend implements BackendClient {
     ];
   }
 
+  /**
+   * There is no `/v1/sheets/usage`, and no billing or metering anywhere in
+   * sellerconnect — nothing server-side counts syncs, accounts or rows, and
+   * nothing enforces a cap.
+   *
+   * So: the **used** figures are real (counted from the syncs and connections
+   * the API just returned), and the **limits** are display-only ceilings set
+   * high enough that they cannot block a user against a backend that does not
+   * enforce them. Throwing instead is not an option — the sync wizard awaits
+   * this alongside the catalog, so a rejection here leaves the wizard on a
+   * spinner forever, which is how this surfaced in the first place.
+   */
   async getUsage(): Promise<Usage> {
-    return notImplemented("GET /v1/sheets/usage");
+    const [syncs, accounts] = await Promise.all([
+      this.listSyncs().catch(() => [] as Sync[]),
+      this.listAccounts().catch(() => [] as AmazonAccount[]),
+    ]);
+    const now = new Date();
+    return {
+      plan: "free",
+      syncsUsed: syncs.length,
+      syncsLimit: 25,
+      accountsUsed: accounts.length,
+      accountsLimit: 10,
+      // Rows written by each sync's most recent run — the only row figure the
+      // API actually reports. Not a billing meter, and not presented as one.
+      rowsUsed: syncs.reduce((sum, s) => sum + (s.rowCount ?? 0), 0),
+      rowsLimit: 1_000_000,
+      periodResetsAt: new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime(),
+    };
   }
 }
